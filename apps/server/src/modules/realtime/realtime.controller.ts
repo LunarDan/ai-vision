@@ -1,4 +1,4 @@
-import { Controller, Post } from "@nestjs/common";
+import { Controller, InternalServerErrorException, Post } from "@nestjs/common";
 import type { RealtimeSessionResponse } from "@ai-vision/shared";
 import { RealtimeService } from "./realtime.service.js";
 
@@ -8,6 +8,11 @@ export class RealtimeController {
 
   @Post("session")
   createSession(): Promise<RealtimeSessionResponse> {
-    return this.realtimeService.createSession();
+    return this.realtimeService.createSession().catch((error: unknown) => {
+      throw new InternalServerErrorException({
+        code: "REALTIME_SESSION_FAILED",
+        message: String(error instanceof Error ? error.message : error),
+      });
+    });
   }
 }

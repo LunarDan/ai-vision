@@ -18,7 +18,9 @@ export class VisionService {
       snapshotId,
       imageBase64: request.imageBase64,
     });
-    const summary = await this.openaiService.analyzeImage(request.imageBase64, request.detail);
+    const summary = await this.openaiService.analyzeImage(request.imageBase64, request.detail).catch((error: unknown) => {
+      return `视觉模型调用失败：${String(error instanceof Error ? error.message : error)}`;
+    });
 
     return {
       snapshot: {

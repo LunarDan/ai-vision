@@ -32,8 +32,54 @@ export interface SessionMetrics {
 export interface RealtimeSessionResponse {
   clientSecret: string;
   model: string;
+  realtimeEndpoint: string;
   expiresAt?: number;
 }
+
+export type OmniClientEvent =
+  | {
+      type: "start";
+      sessionId: string;
+    }
+  | {
+      type: "audio";
+      audioBase64: string;
+      mimeType: string;
+    }
+  | {
+      type: "vision_context";
+      snapshot: VisionSummary;
+    }
+  | {
+      type: "text";
+      text: string;
+    }
+  | {
+      type: "stop";
+    };
+
+export type OmniServerEvent =
+  | {
+      type: "ready";
+      provider: "dashscope" | "fallback";
+    }
+  | {
+      type: "text";
+      text: string;
+      final?: boolean;
+    }
+  | {
+      type: "audio";
+      audioBase64: string;
+      mimeType: string;
+    }
+  | {
+      type: "error";
+      message: string;
+    }
+  | {
+      type: "closed";
+    };
 
 export interface AnalyzeVisionRequest {
   sessionId: string;
@@ -49,6 +95,18 @@ export interface AnalyzeVisionResponse {
 export interface EndSessionRequest {
   sessionId: string;
   metrics: SessionMetrics;
+}
+
+export interface ConversationRequest {
+  sessionId: string;
+  text: string;
+  visionSummary?: VisionSummary | null;
+}
+
+export interface ConversationResponse {
+  sessionId: string;
+  reply: string;
+  createdAt: string;
 }
 
 export interface ApiErrorResponse {

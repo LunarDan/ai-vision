@@ -2,16 +2,28 @@ import { Camera, CircleStop, Mic, MicOff, PhoneCall, ScanEye, Video, VideoOff } 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AssistantPhase, SessionMetrics, VisionSummary } from "@ai-vision/shared";
 import { appCopy, phaseLabels } from "./copy.js";
-import { createRealtimeClient, type RealtimeClient } from "./realtimeClient.js";
+import { createOmniClient, type OmniClient } from "./omniClient.js";
 
 const apiBase = "/api";
 
 type TimelineMessage = {
-  role: "assistant" | "system";
+  role: "assistant" | "system" | "user";
   content: string;
 };
 
 type VisionContextSyncState = "idle" | "pending" | "synced" | "failed";
+
+type SpeechRecognitionLike = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  start: () => void;
+  stop: () => void;
+  onresult: ((event: { results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> }) => void) | null;
+  onerror: (() => void) | null;
+};
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
 const createInitialMetrics = (sessionId: string): SessionMetrics => ({
   sessionId,
@@ -23,10 +35,20 @@ const createInitialMetrics = (sessionId: string): SessionMetrics => ({
   startedAt: new Date().toISOString(),
 });
 
+const getSpeechRecognition = () => {
+  const windowWithSpeech = window as Window &
+    typeof globalThis & {
+      SpeechRecognition?: SpeechRecognitionConstructor;
+      webkitSpeechRecognition?: SpeechRecognitionConstructor;
+    };
+  return windowWithSpeech.SpeechRecognition ?? windowWithSpeech.webkitSpeechRecognition;
+};
+
 export const App = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const realtimeClientRef = useRef<RealtimeClient | null>(null);
+  const omniClientRef = useRef<OmniClient | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const [phase, setPhase] = useState<AssistantPhase>("idle");
   const [sessionId] = useState(() => crypto.randomUUID());
   const [metrics, setMetrics] = useState(() => createInitialMetrics(sessionId));
@@ -52,16 +74,15 @@ export const App = () => {
     }
   }, [stream]);
 
-  const appendSystemMessage = (content: string) => {
-    setMessages((items) => [...items, { role: "system", content }]);
+  const appendMessage = (message: TimelineMessage) => {
+    setMessages((items) => [...items, message]);
   };
 
-  const appendAssistantMessage = (content: string) => {
-    setMessages((items) => [...items, { role: "assistant", content }]);
-  };
+  const appendSystemMessage = (content: string) => appendMessage({ role: "system", content });
+  const appendAssistantMessage = (content: string) => appendMessage({ role: "assistant", content });
 
   const syncVisionContext = (snapshot: VisionSummary) => {
-    const status = realtimeClientRef.current?.syncVisionContext(snapshot);
+    const status = omniClientRef.current?.syncVisionContext(snapshot);
 
     if (!status || status === "failed") {
       setVisionContextSyncState("failed");
@@ -76,6 +97,33 @@ export const App = () => {
     }
   };
 
+  const startSpeechRecognition = () => {
+    const SpeechRecognition = getSpeechRecognition();
+    if (!SpeechRecognition) {
+      appendSystemMessage(appCopy.speechUnsupported);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "zh-CN";
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.onresult = (event) => {
+      const result = event.results[event.results.length - 1];
+      if (!result?.isFinal) return;
+      const text = result[0].transcript.trim();
+      if (!text) return;
+      appendMessage({ role: "user", content: text });
+      omniClientRef.current?.sendText(text);
+      setPhase("thinking");
+    };
+    recognition.onerror = () => {
+      setPhase("error");
+    };
+    recognition.start();
+    recognitionRef.current = recognition;
+  };
+
   const startMedia = async () => {
     let mediaStream: MediaStream | null = null;
     try {
@@ -86,23 +134,28 @@ export const App = () => {
       setMicEnabled(true);
       appendSystemMessage(appCopy.mediaConnectedMessage);
 
-      realtimeClientRef.current = await createRealtimeClient({
+      omniClientRef.current = createOmniClient({
         apiBase,
-        mediaStream,
-        onAssistantMessage: appendAssistantMessage,
-        onDataChannelOpen: () => {
-          if (visionSummary) {
-            syncVisionContext(visionSummary);
-          }
+        sessionId,
+        onAssistantMessage: (message) => {
+          appendAssistantMessage(message);
+          setPhase("speaking");
+          window.setTimeout(() => setPhase("listening"), 500);
         },
         onStatusChange: (status) => {
-          if (status === "connected") setPhase("listening");
           if (status === "connecting") setPhase("connecting");
-          if (status === "disconnected" || status === "failed" || status === "closed") setPhase("error");
+          if (status === "connected") {
+            setPhase("listening");
+            appendSystemMessage(appCopy.realtimeConnectedMessage);
+            if (visionSummary) {
+              syncVisionContext(visionSummary);
+            }
+          }
+          if (status === "closed") setPhase("idle");
+          if (status === "error") setPhase("error");
         },
       });
-      setPhase("listening");
-      appendSystemMessage(appCopy.realtimeConnectedMessage);
+      startSpeechRecognition();
     } catch {
       mediaStream?.getTracks().forEach((track) => track.stop());
       setStream(null);
@@ -113,8 +166,10 @@ export const App = () => {
   };
 
   const stopMedia = async () => {
-    realtimeClientRef.current?.disconnect();
-    realtimeClientRef.current = null;
+    recognitionRef.current?.stop();
+    recognitionRef.current = null;
+    omniClientRef.current?.disconnect();
+    omniClientRef.current = null;
     stream?.getTracks().forEach((track) => track.stop());
     setStream(null);
     setCameraEnabled(false);
@@ -181,7 +236,7 @@ export const App = () => {
         lowDetailRequests: current.lowDetailRequests + 1,
         uploadedImageBytes: current.uploadedImageBytes + data.snapshot.imageBytes,
       }));
-      setMessages((items) => [...items, { role: "assistant", content: data.snapshot.summary }]);
+      appendAssistantMessage(data.snapshot.summary);
       setPhase("listening");
     } catch {
       setPhase("error");
