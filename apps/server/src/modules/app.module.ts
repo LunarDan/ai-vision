@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { ConversationModule } from "./conversation/conversation.module.js";
+import { HealthModule } from "./health/health.module.js";
 import { RealtimeModule } from "./realtime/realtime.module.js";
 import { SessionModule } from "./session/session.module.js";
 import { VisionModule } from "./vision/vision.module.js";
@@ -9,6 +10,7 @@ import { VisionModule } from "./vision/vision.module.js";
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ConversationModule,
+    HealthModule,
     RealtimeModule,
     VisionModule,
     SessionModule,

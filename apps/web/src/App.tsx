@@ -1,8 +1,21 @@
-import { Camera, CircleStop, Mic, MicOff, PhoneCall, ScanEye, Video, VideoOff } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { AssistantPhase, SessionMetrics, VisionSummary } from "@ai-vision/shared";
+import {
+  Camera,
+  CircleStop,
+  Mic,
+  MicOff,
+  PhoneCall,
+  ScanEye,
+  Video,
+  VideoOff,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  AssistantPhase,
+  ConversationResponse,
+  SessionMetrics,
+  VisionSummary,
+} from "@ai-vision/shared";
 import { appCopy, phaseLabels } from "./copy.js";
-import { createOmniClient, type OmniClient } from "./omniClient.js";
 
 const apiBase = "/api";
 
@@ -12,6 +25,16 @@ type TimelineMessage = {
 };
 
 type VisionContextSyncState = "idle" | "pending" | "synced" | "failed";
+type BackendStatus = "unknown" | "online" | "offline";
+
+type CameraDiagnostics = {
+  label: string;
+  width: number;
+  height: number;
+  readyState: MediaStreamTrackState;
+  muted: boolean;
+  enabled: boolean;
+};
 
 type SpeechRecognitionLike = {
   lang: string;
