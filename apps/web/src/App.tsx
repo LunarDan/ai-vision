@@ -78,6 +78,7 @@ const getSpeechRecognition = () => {
 export const App = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const timelineRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const recognitionRestartTimerRef = useRef<number | null>(null);
   const shouldKeepListeningRef = useRef(false);
@@ -128,6 +129,12 @@ export const App = () => {
   useEffect(() => {
     visionSummaryRef.current = visionSummary;
   }, [visionSummary]);
+
+  useEffect(() => {
+    const timeline = timelineRef.current;
+    if (!timeline) return;
+    timeline.scrollTo({ top: timeline.scrollHeight, behavior: "smooth" });
+  }, [messages]);
 
   const costLevel = useMemo(() => {
     if (metrics.highDetailRequests > 3 || metrics.visionRequests > 20)
@@ -661,7 +668,7 @@ export const App = () => {
           <span>{appCopy.currentSession}</span>
           <strong>{phaseLabels[phase]}</strong>
         </div>
-        <div className="timeline">
+        <div className="timeline" ref={timelineRef}>
           {messages.map((message, index) => (
             <div className="message" key={`${message.role}-${index}`}>
               <span>{message.role}</span>
