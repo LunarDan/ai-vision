@@ -1,7 +1,14 @@
 :root {
   color: #eef4ff;
   background: #0b1117;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -67,7 +74,9 @@ button:disabled {
 }
 
 .stage {
-  background: radial-gradient(circle at 50% 8%, rgba(40, 77, 101, 0.44), transparent 34%), #0b1117;
+  background:
+    radial-gradient(circle at 50% 8%, rgba(40, 77, 101, 0.44), transparent 34%),
+    #0b1117;
   display: grid;
   grid-template-rows: auto 1fr auto;
   gap: 20px;
@@ -219,10 +228,67 @@ video {
   padding: 7px 10px;
 }
 
+.camera-diagnostics {
+  align-items: flex-end;
+  background: rgba(8, 15, 22, 0.82);
+  border: 1px solid rgba(164, 221, 235, 0.24);
+  border-radius: 8px;
+  color: #dcebf4;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  gap: 4px;
+  max-width: min(420px, calc(100% - 32px));
+  overflow: hidden;
+  padding: 10px 12px;
+  position: absolute;
+  right: 16px;
+  text-align: right;
+  text-overflow: ellipsis;
+  top: 16px;
+  white-space: nowrap;
+}
+
+.camera-diagnostics span {
+  color: #a7b7c7;
+}
+
 .controlbar {
+  align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.device-select {
+  align-items: center;
+  background: #111c27;
+  border: 1px solid #314254;
+  border-radius: 8px;
+  color: #d8e5ef;
+  display: inline-flex;
+  gap: 10px;
+  min-height: 42px;
+  padding: 0 12px;
+}
+
+.device-select span {
+  color: #93a4b7;
+  font-size: 12px;
+}
+
+.device-select select {
+  background: transparent;
+  border: 0;
+  color: #f3f8ff;
+  font: inherit;
+  max-width: 220px;
+  outline: 0;
+}
+
+.device-select option {
+  background: #101923;
+  color: #f3f8ff;
 }
 
 .inspector section {

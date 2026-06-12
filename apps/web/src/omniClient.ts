@@ -16,8 +16,15 @@ export type OmniClient = {
 };
 
 const createWsUrl = (apiBase: string) => {
+  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+    return "ws://localhost:3001/api/omni/realtime";
+  }
+
   const baseUrl = new URL(apiBase, window.location.origin);
   baseUrl.protocol = baseUrl.protocol === "https:" ? "wss:" : "ws:";
+  if (baseUrl.port && baseUrl.port !== "3001") {
+    baseUrl.port = "3001";
+  }
   baseUrl.pathname = `${baseUrl.pathname.replace(/\/$/, "")}/omni/realtime`;
   return baseUrl.toString();
 };
