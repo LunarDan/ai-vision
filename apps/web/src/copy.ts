@@ -62,14 +62,14 @@ export const appCopy = {
   visionSummaryLabel: "Vision Summary",
   currentViewTitle: "AI 当前看到",
   emptySummary:
-    "还没有分析画面。点击分析画面后，视觉摘要会同步到语音上下文。",
+    "还没有分析画面。点击分析画面后，视觉摘要会作为下一次语音问题的上下文。",
   updatedAt: "更新于",
   waitingFirstFrame: "等待第一帧",
   visionContextSyncLabels: {
     idle: "未同步到语音上下文",
-    pending: "等待语音通道同步",
-    synced: "已同步到语音上下文",
-    failed: "同步失败",
+    pending: "等待下一次语音问题",
+    synced: "已准备为语音上下文",
+    failed: "等待语音问题携带",
   },
   metricVisionRequests: "视觉请求",
   metricLowDetail: "低细节",

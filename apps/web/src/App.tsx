@@ -682,7 +682,15 @@ export const App = () => {
 
         <div className="video-wrap">
           {cameraEnabled ? (
-            <video ref={videoRef} autoPlay playsInline muted />
+            <video
+              ref={bindVideoElement}
+              autoPlay
+              playsInline
+              muted
+              onLoadedMetadata={() => {
+                void videoRef.current?.play().catch(() => undefined);
+              }}
+            />
           ) : (
             <div className="empty-video">
               <Camera size={44} />
