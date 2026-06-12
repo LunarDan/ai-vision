@@ -4,7 +4,7 @@
 
 本项目实现一款 Web 端 AI 视觉对话助手。用户授权摄像头和麦克风后，AI 能听到用户说话、看到摄像头画面，并基于语音内容和视觉摘要给出自然回应。
 
-技术方案采用 pnpm monorepo、React、NestJS、PostgreSQL、Prisma 和 OpenAI Realtime/vision API。v1 不采用微服务，而使用 NestJS 模块化单体，优先保证演示稳定性和功能完整度。
+技术方案采用 pnpm monorepo、React、NestJS、PostgreSQL、Prisma、MinIO 和 OpenAI Realtime/vision API。v1 不采用微服务，而使用 NestJS 模块化单体，优先保证演示稳定性和功能完整度。
 
 ## 2. 用户故事
 
@@ -34,6 +34,7 @@
 - `RealtimeModule`：创建 OpenAI Realtime ephemeral client secret。
 - `VisionModule`：接收关键帧并调用视觉模型生成摘要。
 - `SessionModule`：结束会话并汇总指标。
+- `StorageModule`：将被分析的关键帧存入 MinIO。
 - `OpenaiModule`：封装 OpenAI API 调用。
 
 ### 3.3 数据库
@@ -42,15 +43,15 @@
 
 - `Session`：会话状态、开始和结束时间、成本模式。
 - `Message`：用户和 AI 消息。
-- `VisionSnapshot`：视觉摘要、图片大小、detail 档位、延迟。
+- `VisionSnapshot`：视觉摘要、图片大小、detail 档位、延迟和对象存储信息。
 - `SessionMetric`：语音时长、视觉请求数、上传图片大小、成本指标。
 
-## 4. 成本控制技巧
+## 4. 成本控制策略
 
-| 技巧 | 计划采用 | 当前实现状态 |
+| 策略 | 计划采用 | 当前实现状态 |
 | --- | --- | --- |
 | 不上传连续视频，只上传关键帧 | 是 | 已采用 |
-| 前端压缩图片尺寸和质量 | 是 | 已采用，当前宽度 768px，JPEG 0.72 |
+| 前端压缩图片尺寸和质量 | 是 | 已采用，当前宽度 768px，JPEG 质量 0.72 |
 | 默认使用 `detail: low` | 是 | 已采用 |
 | 视觉相关问题时临时升频或升到 `detail: high` | 是 | 待接入语义判断 |
 | 静止画面减少重复上传 | 是 | 待实现帧差检测 |
@@ -62,17 +63,17 @@
 
 前端采用桌面级 AI 工作台布局，而不是普通 demo 页面：
 
-- 左侧展示会话和系统消息。
+- 左侧展示会话状态和系统消息。
 - 中间展示摄像头主画面和核心控制按钮。
 - 右侧展示视觉摘要、请求指标和成本策略。
 - 控制按钮采用图标加文字，便于答辩现场快速操作。
-- 当前状态包括 idle、connecting、listening、thinking、speaking 和 error。
-
-实现阶段优先安装并参考 `https://github.com/nextlevelbuilder/ui-ux-pro-max-skill.git`。如果该 skill 无法安装或识别，则按同等 UI/UX 标准手动实现。
+- 当前状态包括 `idle`、`connecting`、`listening`、`thinking`、`speaking` 和 `error`。
+- UI 文案集中维护在 `apps/web/src/copy.ts`，避免组件中散落硬编码文案。
+- 摄像头授权失败、画面未就绪、视觉分析失败和结束会话失败都会进入消息流反馈。
 
 ## 6. 不采用微服务的原因
 
-v1 不采用微服务。原因如下：
+v1 不采用微服务，原因如下：
 
 - 本项目核心风险在多模态交互体验，不在分布式系统治理。
 - 微服务会增加部署、链路追踪、服务间通信和调试成本。
@@ -96,4 +97,4 @@ v1 不采用微服务。原因如下：
 - MinIO API 地址为 `http://localhost:9000`，控制台地址为 `http://localhost:9001`。
 - 后端默认 bucket 为 `ai-vision-assets`，启动时会自动创建。
 - 视觉接口会把每张被分析的关键帧存为 `sessions/{sessionId}/vision/{timestamp}-{snapshotId}.jpg`。
-- 成本控制策略保持不变：只存被分析的关键帧，不保存连续视频流。
+- 成本控制策略保持不变：只保存被分析的关键帧，不保存连续视频流。

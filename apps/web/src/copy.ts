@@ -1,0 +1,61 @@
+import type { AssistantPhase } from "@ai-vision/shared";
+
+export const appCopy = {
+  initialAssistantMessage:
+    "准备就绪。授权摄像头和麦克风后，我可以一边看画面，一边听你说话。",
+  mediaConnectedMessage: "摄像头和麦克风已连接。",
+  cameraPermissionError: "无法连接摄像头或麦克风，请检查浏览器授权后重试。",
+  cameraNotReadyMessage: "摄像头画面还没有准备好，请稍等一秒再分析。",
+  visionAnalyzeError: "画面分析失败，请确认后端服务和 OpenAI 配置正常。",
+  sessionEndError: "会话结束请求没有成功，但本地设备已经关闭。",
+  title: "视觉对话工作台",
+  currentSession: "当前会话",
+  realtimeLabel: "Realtime Camera + Voice",
+  stageTitle: "边看边听，实时回应",
+  cameraOnline: "Camera online",
+  cameraOffline: "Camera offline",
+  micOnline: "Mic online",
+  micMuted: "Mic muted",
+  emptyVideo: "等待摄像头授权",
+  connect: "连接",
+  connectTitle: "连接设备",
+  toggleMic: "麦克风",
+  toggleMicTitle: "切换麦克风",
+  toggleCamera: "摄像头",
+  toggleCameraTitle: "切换摄像头",
+  analyzeFrame: "分析画面",
+  analyzeFrameTitle: "分析当前画面",
+  endSession: "结束",
+  endSessionTitle: "结束会话",
+  visionSummaryLabel: "Vision Summary",
+  currentViewTitle: "AI 当前看到",
+  emptySummary:
+    "还没有分析画面。点击分析画面，或在接入实时链路后自动抽帧。",
+  updatedAt: "更新于",
+  waitingFirstFrame: "等待第一帧",
+  metricVisionRequests: "视觉请求",
+  metricLowDetail: "低细节",
+  metricHighDetail: "高细节",
+  metricCostLevel: "成本等级",
+  costStrategyLabel: "Cost Strategy",
+  strategies: [
+    "默认只上传关键帧",
+    "图片压缩到 768px 宽",
+    "默认 detail: low",
+    "视觉问题再升频或升档",
+  ],
+  costLevels: {
+    low: "低",
+    medium: "中等",
+    high: "偏高",
+  },
+} as const;
+
+export const phaseLabels: Record<AssistantPhase, string> = {
+  idle: "空闲",
+  connecting: "连接中",
+  listening: "聆听中",
+  thinking: "分析中",
+  speaking: "回应中",
+  error: "异常",
+};
