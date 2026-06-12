@@ -1,8 +1,14 @@
 import { Camera, CircleStop, Mic, MicOff, PhoneCall, ScanEye, Video, VideoOff } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AssistantPhase, SessionMetrics, VisionSummary } from "@ai-vision/shared";
+import { appCopy, phaseLabels } from "./copy.js";
 
 const apiBase = "/api";
+
+type TimelineMessage = {
+  role: "assistant" | "system";
+  content: string;
+};
 
 const createInitialMetrics = (sessionId: string): SessionMetrics => ({
   sessionId,
@@ -24,14 +30,14 @@ export const App = () => {
   const [micEnabled, setMicEnabled] = useState(true);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [visionSummary, setVisionSummary] = useState<VisionSummary | null>(null);
-  const [messages, setMessages] = useState([
-    { role: "assistant", content: "准备就绪。授权摄像头和麦克风后，我可以边看边听。" },
+  const [messages, setMessages] = useState<TimelineMessage[]>([
+    { role: "assistant", content: appCopy.initialAssistantMessage },
   ]);
 
   const costLevel = useMemo(() => {
-    if (metrics.highDetailRequests > 3 || metrics.visionRequests > 20) return "偏高";
-    if (metrics.visionRequests > 8) return "中等";
-    return "低";
+    if (metrics.highDetailRequests > 3 || metrics.visionRequests > 20) return appCopy.costLevels.high;
+    if (metrics.visionRequests > 8) return appCopy.costLevels.medium;
+    return appCopy.costLevels.low;
   }, [metrics.highDetailRequests, metrics.visionRequests]);
 
   useEffect(() => {
@@ -40,14 +46,23 @@ export const App = () => {
     }
   }, [stream]);
 
+  const appendSystemMessage = (content: string) => {
+    setMessages((items) => [...items, { role: "system", content }]);
+  };
+
   const startMedia = async () => {
-    setPhase("connecting");
-    const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    setStream(mediaStream);
-    setCameraEnabled(true);
-    setMicEnabled(true);
-    setPhase("listening");
-    setMessages((items) => [...items, { role: "system", content: "摄像头和麦克风已连接。" }]);
+    try {
+      setPhase("connecting");
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      setStream(mediaStream);
+      setCameraEnabled(true);
+      setMicEnabled(true);
+      setPhase("listening");
+      appendSystemMessage(appCopy.mediaConnectedMessage);
+    } catch {
+      setPhase("error");
+      appendSystemMessage(appCopy.cameraPermissionError);
+    }
   };
 
   const stopMedia = async () => {
@@ -55,11 +70,16 @@ export const App = () => {
     setStream(null);
     setCameraEnabled(false);
     setPhase("idle");
-    await fetch(`${apiBase}/session/end`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId, metrics }),
-    }).catch(() => undefined);
+
+    try {
+      await fetch(`${apiBase}/session/end`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, metrics: { ...metrics, endedAt: new Date().toISOString() } }),
+      });
+    } catch {
+      appendSystemMessage(appCopy.sessionEndError);
+    }
   };
 
   const toggleMic = () => {
@@ -69,10 +89,20 @@ export const App = () => {
     setMicEnabled((value) => !value);
   };
 
+  const toggleCamera = () => {
+    stream?.getVideoTracks().forEach((track) => {
+      track.enabled = !cameraEnabled;
+    });
+    setCameraEnabled((value) => !value);
+  };
+
   const analyzeFrame = async () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas || video.readyState < 2) return;
+    if (!video || !canvas || video.readyState < 2) {
+      appendSystemMessage(appCopy.cameraNotReadyMessage);
+      return;
+    }
 
     const width = 768;
     const ratio = video.videoHeight / video.videoWidth || 0.5625;
@@ -82,21 +112,31 @@ export const App = () => {
     const imageBase64 = canvas.toDataURL("image/jpeg", 0.72);
     setPhase("thinking");
 
-    const response = await fetch(`${apiBase}/vision/analyze`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId, imageBase64, detail: "low", reason: "manual" }),
-    });
-    const data = (await response.json()) as { snapshot: VisionSummary };
-    setVisionSummary(data.snapshot);
-    setMetrics((current) => ({
-      ...current,
-      visionRequests: current.visionRequests + 1,
-      lowDetailRequests: current.lowDetailRequests + 1,
-      uploadedImageBytes: current.uploadedImageBytes + data.snapshot.imageBytes,
-    }));
-    setMessages((items) => [...items, { role: "assistant", content: data.snapshot.summary }]);
-    setPhase("listening");
+    try {
+      const response = await fetch(`${apiBase}/vision/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, imageBase64, detail: "low", reason: "manual" }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Vision API failed with ${response.status}`);
+      }
+
+      const data = (await response.json()) as { snapshot: VisionSummary };
+      setVisionSummary(data.snapshot);
+      setMetrics((current) => ({
+        ...current,
+        visionRequests: current.visionRequests + 1,
+        lowDetailRequests: current.lowDetailRequests + 1,
+        uploadedImageBytes: current.uploadedImageBytes + data.snapshot.imageBytes,
+      }));
+      setMessages((items) => [...items, { role: "assistant", content: data.snapshot.summary }]);
+      setPhase("listening");
+    } catch {
+      setPhase("error");
+      appendSystemMessage(appCopy.visionAnalyzeError);
+    }
   };
 
   return (
@@ -104,11 +144,11 @@ export const App = () => {
       <aside className="sidebar">
         <div>
           <p className="eyebrow">AI Vision</p>
-          <h1>视觉对话工作台</h1>
+          <h1>{appCopy.title}</h1>
         </div>
         <div className="session-card active">
-          <span>当前会话</span>
-          <strong>{phase}</strong>
+          <span>{appCopy.currentSession}</span>
+          <strong>{phaseLabels[phase]}</strong>
         </div>
         <div className="timeline">
           {messages.map((message, index) => (
@@ -123,52 +163,89 @@ export const App = () => {
       <section className="stage">
         <header className="topbar">
           <div>
-            <p className="eyebrow">Realtime Camera + Voice</p>
-            <h2>边看边听，实时回应</h2>
+            <p className="eyebrow">{appCopy.realtimeLabel}</p>
+            <h2>{appCopy.stageTitle}</h2>
           </div>
-          <div className={`status ${phase}`}>{phase}</div>
+          <div className={`status ${phase}`}>{phaseLabels[phase]}</div>
         </header>
 
         <div className="video-wrap">
-          {cameraEnabled ? <video ref={videoRef} autoPlay playsInline muted /> : <div className="empty-video"><Camera size={44} />等待摄像头授权</div>}
+          {cameraEnabled ? (
+            <video ref={videoRef} autoPlay playsInline muted />
+          ) : (
+            <div className="empty-video">
+              <Camera size={44} />
+              {appCopy.emptyVideo}
+            </div>
+          )}
           <canvas ref={canvasRef} hidden />
           <div className="video-overlay">
-            <span>{cameraEnabled ? "Camera online" : "Camera offline"}</span>
-            <span>{micEnabled ? "Mic online" : "Mic muted"}</span>
+            <span>{cameraEnabled ? appCopy.cameraOnline : appCopy.cameraOffline}</span>
+            <span>{micEnabled ? appCopy.micOnline : appCopy.micMuted}</span>
           </div>
         </div>
 
         <div className="controlbar">
-          <button onClick={startMedia} disabled={cameraEnabled} title="连接设备"><PhoneCall size={18} />连接</button>
-          <button onClick={toggleMic} disabled={!stream} title="切换麦克风">{micEnabled ? <Mic size={18} /> : <MicOff size={18} />}麦克风</button>
-          <button onClick={() => setCameraEnabled((value) => !value)} disabled={!stream} title="切换摄像头">{cameraEnabled ? <Video size={18} /> : <VideoOff size={18} />}摄像头</button>
-          <button onClick={analyzeFrame} disabled={!cameraEnabled} title="分析当前画面"><ScanEye size={18} />分析画面</button>
-          <button onClick={stopMedia} disabled={!stream} title="结束会话"><CircleStop size={18} />结束</button>
+          <button onClick={startMedia} disabled={cameraEnabled} title={appCopy.connectTitle}>
+            <PhoneCall size={18} />
+            {appCopy.connect}
+          </button>
+          <button onClick={toggleMic} disabled={!stream} title={appCopy.toggleMicTitle}>
+            {micEnabled ? <Mic size={18} /> : <MicOff size={18} />}
+            {appCopy.toggleMic}
+          </button>
+          <button onClick={toggleCamera} disabled={!stream} title={appCopy.toggleCameraTitle}>
+            {cameraEnabled ? <Video size={18} /> : <VideoOff size={18} />}
+            {appCopy.toggleCamera}
+          </button>
+          <button onClick={analyzeFrame} disabled={!cameraEnabled} title={appCopy.analyzeFrameTitle}>
+            <ScanEye size={18} />
+            {appCopy.analyzeFrame}
+          </button>
+          <button onClick={stopMedia} disabled={!stream} title={appCopy.endSessionTitle}>
+            <CircleStop size={18} />
+            {appCopy.endSession}
+          </button>
         </div>
       </section>
 
       <aside className="inspector">
         <section>
-          <p className="eyebrow">Vision Summary</p>
-          <h3>AI 当前看到</h3>
-          <p className="summary">{visionSummary?.summary ?? "还没有分析画面。点击分析画面，或在接入实时链路后自动抽帧。"}</p>
-          <small>{visionSummary ? `更新于 ${new Date(visionSummary.createdAt).toLocaleTimeString()}` : "等待第一帧"}</small>
+          <p className="eyebrow">{appCopy.visionSummaryLabel}</p>
+          <h3>{appCopy.currentViewTitle}</h3>
+          <p className="summary">{visionSummary?.summary ?? appCopy.emptySummary}</p>
+          <small>
+            {visionSummary
+              ? `${appCopy.updatedAt} ${new Date(visionSummary.createdAt).toLocaleTimeString()}`
+              : appCopy.waitingFirstFrame}
+          </small>
         </section>
 
         <section className="metric-grid">
-          <div><span>视觉请求</span><strong>{metrics.visionRequests}</strong></div>
-          <div><span>低细节</span><strong>{metrics.lowDetailRequests}</strong></div>
-          <div><span>高细节</span><strong>{metrics.highDetailRequests}</strong></div>
-          <div><span>成本等级</span><strong>{costLevel}</strong></div>
+          <div>
+            <span>{appCopy.metricVisionRequests}</span>
+            <strong>{metrics.visionRequests}</strong>
+          </div>
+          <div>
+            <span>{appCopy.metricLowDetail}</span>
+            <strong>{metrics.lowDetailRequests}</strong>
+          </div>
+          <div>
+            <span>{appCopy.metricHighDetail}</span>
+            <strong>{metrics.highDetailRequests}</strong>
+          </div>
+          <div>
+            <span>{appCopy.metricCostLevel}</span>
+            <strong>{costLevel}</strong>
+          </div>
         </section>
 
         <section>
-          <p className="eyebrow">Cost Strategy</p>
+          <p className="eyebrow">{appCopy.costStrategyLabel}</p>
           <ul className="strategy-list">
-            <li>默认只上传关键帧</li>
-            <li>图片压缩到 768px 宽</li>
-            <li>默认 detail: low</li>
-            <li>视觉问题再升频/升档</li>
+            {appCopy.strategies.map((strategy) => (
+              <li key={strategy}>{strategy}</li>
+            ))}
           </ul>
         </section>
       </aside>
