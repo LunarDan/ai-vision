@@ -1,0 +1,21 @@
+{
+  "name": "ai-vision",
+  "private": true,
+  "version": "0.1.0",
+  "description": "AI vision conversation assistant built with React, NestJS, OpenAI Realtime, and PostgreSQL.",
+  "packageManager": "pnpm@10.0.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @ai-vision/web --filter @ai-vision/server dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "format": "prettier --write .",
+    "db:generate": "pnpm --filter @ai-vision/server db:generate",
+    "db:migrate": "pnpm --filter @ai-vision/server db:migrate"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2"
+  }
+}

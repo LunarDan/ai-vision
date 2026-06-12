@@ -1,0 +1,56 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id        String           @id @default(cuid())
+  status    String           @default("active")
+  costMode  String           @default("balanced")
+  startedAt DateTime         @default(now())
+  endedAt   DateTime?
+  messages  Message[]
+  snapshots VisionSnapshot[]
+  metrics   SessionMetric?
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  sessionId String
+  role      String
+  content   String
+  createdAt DateTime @default(now())
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+model VisionSnapshot {
+  id         String   @id @default(cuid())
+  sessionId  String
+  summary    String
+  detail     String
+  imageBytes Int
+  objectKey  String?
+  bucket     String?
+  contentType String?
+  sha256     String?
+  latencyMs  Int
+  reason     String
+  createdAt  DateTime @default(now())
+  session    Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+model SessionMetric {
+  id                 String   @id @default(cuid())
+  sessionId          String   @unique
+  audioSeconds       Int      @default(0)
+  visionRequests     Int      @default(0)
+  lowDetailRequests  Int      @default(0)
+  highDetailRequests Int      @default(0)
+  uploadedImageBytes Int      @default(0)
+  updatedAt          DateTime @updatedAt
+  session            Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
