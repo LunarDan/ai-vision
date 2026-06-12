@@ -2,6 +2,7 @@ import { Camera, CircleStop, Mic, MicOff, PhoneCall, ScanEye, Video, VideoOff } 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AssistantPhase, SessionMetrics, VisionSummary } from "@ai-vision/shared";
 import { appCopy, phaseLabels } from "./copy.js";
+import { createRealtimeClient, type RealtimeClient } from "./realtimeClient.js";
 
 const apiBase = "/api";
 
@@ -23,6 +24,7 @@ const createInitialMetrics = (sessionId: string): SessionMetrics => ({
 export const App = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const realtimeClientRef = useRef<RealtimeClient | null>(null);
   const [phase, setPhase] = useState<AssistantPhase>("idle");
   const [sessionId] = useState(() => crypto.randomUUID());
   const [metrics, setMetrics] = useState(() => createInitialMetrics(sessionId));
@@ -50,22 +52,44 @@ export const App = () => {
     setMessages((items) => [...items, { role: "system", content }]);
   };
 
+  const appendAssistantMessage = (content: string) => {
+    setMessages((items) => [...items, { role: "assistant", content }]);
+  };
+
   const startMedia = async () => {
+    let mediaStream: MediaStream | null = null;
     try {
       setPhase("connecting");
-      const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       setStream(mediaStream);
       setCameraEnabled(true);
       setMicEnabled(true);
-      setPhase("listening");
       appendSystemMessage(appCopy.mediaConnectedMessage);
+
+      realtimeClientRef.current = await createRealtimeClient({
+        apiBase,
+        mediaStream,
+        onAssistantMessage: appendAssistantMessage,
+        onStatusChange: (status) => {
+          if (status === "connected") setPhase("listening");
+          if (status === "connecting") setPhase("connecting");
+          if (status === "disconnected" || status === "failed" || status === "closed") setPhase("error");
+        },
+      });
+      setPhase("listening");
+      appendSystemMessage(appCopy.realtimeConnectedMessage);
     } catch {
+      mediaStream?.getTracks().forEach((track) => track.stop());
+      setStream(null);
+      setCameraEnabled(false);
       setPhase("error");
-      appendSystemMessage(appCopy.cameraPermissionError);
+      appendSystemMessage(appCopy.realtimeConnectionError);
     }
   };
 
   const stopMedia = async () => {
+    realtimeClientRef.current?.disconnect();
+    realtimeClientRef.current = null;
     stream?.getTracks().forEach((track) => track.stop());
     setStream(null);
     setCameraEnabled(false);
