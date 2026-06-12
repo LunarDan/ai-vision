@@ -4,6 +4,8 @@ export const appCopy = {
   initialAssistantMessage:
     "准备就绪。授权摄像头和麦克风后，我可以一边看画面，一边听你说话。",
   mediaConnectedMessage: "摄像头和麦克风已连接。",
+  realtimeConnectedMessage: "实时语音通道已连接，可以开始对话。",
+  realtimeConnectionError: "实时语音通道连接失败，请确认后端服务、OpenAI Key 和浏览器授权正常。",
   cameraPermissionError: "无法连接摄像头或麦克风，请检查浏览器授权后重试。",
   cameraNotReadyMessage: "摄像头画面还没有准备好，请稍等一秒再分析。",
   visionAnalyzeError: "画面分析失败，请确认后端服务和 OpenAI 配置正常。",

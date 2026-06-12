@@ -82,13 +82,25 @@ v1 不采用微服务，原因如下：
 
 ## 7. 后续实现重点
 
-1. 完成 OpenAI Realtime WebRTC 客户端接入。
-2. 将视觉摘要注入 Realtime 对话上下文。
-3. 接入 Prisma，把会话、消息、视觉摘要和指标写入 PostgreSQL。
-4. 增加帧差检测和请求频率限制。
-5. 补充接口测试和端到端演示脚本。
+1. 将视觉摘要注入 Realtime 对话上下文。
+2. 接入 Prisma，把会话、消息、视觉摘要和指标写入 PostgreSQL。
+3. 增加帧差检测和请求频率限制。
+4. 补充接口测试和端到端演示脚本。
 
-## 8. MinIO 对象存储
+## 8. Realtime WebRTC 接入
+
+前端通过 `apps/web/src/realtimeClient.ts` 建立 OpenAI Realtime WebRTC 连接：
+
+- 浏览器先调用后端 `/api/realtime/session` 获取 ephemeral client secret。
+- 前端创建 `RTCPeerConnection`，把麦克风音轨加入连接。
+- 前端创建 `oai-events` data channel，用于接收 Realtime 事件。
+- 前端将 SDP offer 发送到 OpenAI Realtime calls endpoint，并用返回的 SDP answer 完成连接。
+- 远端音频通过浏览器 `Audio` 元素自动播放。
+- 连接失败时 UI 会进入 `error` 状态，并关闭已获取的本地媒体流。
+
+当前 Realtime 接入只负责语音通道。视觉摘要注入、自动抽帧和更完整的事件解析会在后续 PR 中完成。
+
+## 9. MinIO 对象存储
 
 项目接入 MinIO 作为对象存储层。PostgreSQL 只保存结构化元数据，MinIO 保存被分析的摄像头关键帧。
 
