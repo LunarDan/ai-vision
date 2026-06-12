@@ -14,6 +14,7 @@ export interface StoredObject {
 export class StorageService implements OnModuleInit {
   private readonly logger = new Logger(StorageService.name);
   private readonly bucket = process.env.MINIO_BUCKET ?? "ai-vision-assets";
+  private storageAvailable = false;
   private readonly client = new Client({
     endPoint: process.env.MINIO_ENDPOINT ?? "localhost",
     port: Number(process.env.MINIO_PORT ?? 9000),
@@ -23,7 +24,10 @@ export class StorageService implements OnModuleInit {
   });
 
   async onModuleInit() {
-    await this.ensureBucket();
+    await this.ensureBucket().catch((error: unknown) => {
+      this.storageAvailable = false;
+      this.logger.warn(`MinIO is unavailable; vision analysis will continue without object storage. ${String(error)}`);
+    });
   }
 
   async uploadVisionFrame(params: {
@@ -37,14 +41,16 @@ export class StorageService implements OnModuleInit {
     const sha256 = createHash("sha256").update(buffer).digest("hex");
     const objectKey = `sessions/${params.sessionId}/vision/${Date.now()}-${params.snapshotId}.jpg`;
 
-    await this.client.putObject(this.bucket, objectKey, buffer, buffer.length, {
-      "Content-Type": contentType,
-      "X-Amz-Meta-Sha256": sha256,
-    });
+    if (this.storageAvailable) {
+      await this.client.putObject(this.bucket, objectKey, buffer, buffer.length, {
+        "Content-Type": contentType,
+        "X-Amz-Meta-Sha256": sha256,
+      });
+    }
 
     return {
       bucket: this.bucket,
-      objectKey,
+      objectKey: this.storageAvailable ? objectKey : "",
       contentType,
       bytes: buffer.length,
       sha256,
@@ -65,6 +71,8 @@ export class StorageService implements OnModuleInit {
       await this.client.makeBucket(this.bucket);
       this.logger.log(`Created MinIO bucket ${this.bucket}`);
     }
+
+    this.storageAvailable = true;
   }
 
   private base64ToBuffer(imageBase64: string) {
