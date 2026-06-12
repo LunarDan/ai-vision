@@ -235,6 +235,31 @@ video {
   margin-bottom: 12px;
 }
 
+.sync-status {
+  border: 1px solid #314254;
+  border-radius: 999px;
+  color: #cfe0ec;
+  display: inline-flex;
+  font-size: 12px;
+  margin-top: 12px;
+  padding: 6px 10px;
+}
+
+.sync-status.synced {
+  background: #103f36;
+  border-color: #2dbb9f;
+}
+
+.sync-status.pending {
+  background: #3b3517;
+  border-color: #bfa64a;
+}
+
+.sync-status.failed {
+  background: #421d24;
+  border-color: #bd5264;
+}
+
 .metric-grid {
   display: grid;
   gap: 10px;

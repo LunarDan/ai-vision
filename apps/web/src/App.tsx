@@ -11,6 +11,8 @@ type TimelineMessage = {
   content: string;
 };
 
+type VisionContextSyncState = "idle" | "pending" | "synced" | "failed";
+
 const createInitialMetrics = (sessionId: string): SessionMetrics => ({
   sessionId,
   audioSeconds: 0,
@@ -32,6 +34,8 @@ export const App = () => {
   const [micEnabled, setMicEnabled] = useState(true);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [visionSummary, setVisionSummary] = useState<VisionSummary | null>(null);
+  const [visionContextSyncState, setVisionContextSyncState] = useState<VisionContextSyncState>("idle");
+  const [visionContextSyncedAt, setVisionContextSyncedAt] = useState<string | null>(null);
   const [messages, setMessages] = useState<TimelineMessage[]>([
     { role: "assistant", content: appCopy.initialAssistantMessage },
   ]);
@@ -56,6 +60,22 @@ export const App = () => {
     setMessages((items) => [...items, { role: "assistant", content }]);
   };
 
+  const syncVisionContext = (snapshot: VisionSummary) => {
+    const status = realtimeClientRef.current?.syncVisionContext(snapshot);
+
+    if (!status || status === "failed") {
+      setVisionContextSyncState("failed");
+      appendSystemMessage(appCopy.visionContextSyncFailed);
+      return;
+    }
+
+    setVisionContextSyncState(status === "sent" ? "synced" : "pending");
+    if (status === "sent") {
+      setVisionContextSyncedAt(new Date().toISOString());
+      appendSystemMessage(appCopy.visionContextSynced);
+    }
+  };
+
   const startMedia = async () => {
     let mediaStream: MediaStream | null = null;
     try {
@@ -70,6 +90,11 @@ export const App = () => {
         apiBase,
         mediaStream,
         onAssistantMessage: appendAssistantMessage,
+        onDataChannelOpen: () => {
+          if (visionSummary) {
+            syncVisionContext(visionSummary);
+          }
+        },
         onStatusChange: (status) => {
           if (status === "connected") setPhase("listening");
           if (status === "connecting") setPhase("connecting");
@@ -149,6 +174,7 @@ export const App = () => {
 
       const data = (await response.json()) as { snapshot: VisionSummary };
       setVisionSummary(data.snapshot);
+      syncVisionContext(data.snapshot);
       setMetrics((current) => ({
         ...current,
         visionRequests: current.visionRequests + 1,
@@ -243,6 +269,10 @@ export const App = () => {
               ? `${appCopy.updatedAt} ${new Date(visionSummary.createdAt).toLocaleTimeString()}`
               : appCopy.waitingFirstFrame}
           </small>
+          <div className={`sync-status ${visionContextSyncState}`}>
+            {appCopy.visionContextSyncLabels[visionContextSyncState]}
+            {visionContextSyncedAt ? ` · ${new Date(visionContextSyncedAt).toLocaleTimeString()}` : ""}
+          </div>
         </section>
 
         <section className="metric-grid">
