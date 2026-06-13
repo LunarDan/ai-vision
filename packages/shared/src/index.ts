@@ -44,6 +44,13 @@ export interface VisionActionTimeline {
   createdAt: string;
 }
 
+export interface VideoStreamFrame {
+  id: string;
+  imageBase64: string;
+  capturedAt: string;
+  fingerprint: number[];
+}
+
 export interface SessionMetrics {
   sessionId: string;
   audioSeconds: number;
@@ -77,6 +84,10 @@ export type OmniClientEvent =
       snapshot: VisionSummary;
     }
   | {
+      type: "video_frame";
+      frame: VideoStreamFrame;
+    }
+  | {
       type: "text";
       text: string;
     }
@@ -99,6 +110,25 @@ export type OmniServerEvent =
       audioBase64: string;
       mimeType: string;
     }
+  | {
+      type: "video_summary";
+      snapshot: VisionSummary;
+    }
+  | {
+      type: "action_timeline";
+      timeline: VisionActionTimeline;
+    }
+    | {
+        type: "video_status";
+        receivedFrames: number;
+        bufferedFrames: number;
+        cloudAnalyses: number;
+        timelineAnalyses: number;
+        timelineErrors: number;
+        lastTimelineAt?: string | null;
+        lastError?: string | null;
+        updatedAt: string;
+      }
   | {
       type: "error";
       message: string;
