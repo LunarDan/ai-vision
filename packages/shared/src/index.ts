@@ -4,6 +4,8 @@ export type VisionDetail = "low" | "high";
 
 export type CostMode = "balanced" | "economy" | "detail";
 
+export type SceneMode = "general" | "action" | "study" | "interview" | "life";
+
 export interface VisionSummary {
   id: string;
   sessionId: string;
@@ -112,6 +114,7 @@ export type OmniClientEvent =
   | {
       type: "text";
       text: string;
+      sceneMode?: SceneMode;
     }
   | {
       type: "stop";
@@ -189,6 +192,7 @@ export interface EndSessionRequest {
 export interface ConversationRequest {
   sessionId: string;
   text: string;
+  sceneMode?: SceneMode;
   visionSummary?: VisionSummary | null;
   visionTimeline?: VisionActionTimeline | null;
   history?: ConversationHistoryItem[];

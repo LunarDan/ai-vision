@@ -303,7 +303,8 @@ video {
   gap: 10px;
 }
 
-.device-select {
+.device-select,
+.mode-select {
   align-items: center;
   background: #111c27;
   border: 1px solid #314254;
@@ -315,12 +316,18 @@ video {
   padding: 0 12px;
 }
 
-.device-select span {
+.mode-select {
+  margin-left: auto;
+}
+
+.device-select span,
+.mode-select span {
   color: #93a4b7;
   font-size: 12px;
 }
 
-.device-select select {
+.device-select select,
+.mode-select select {
   background: transparent;
   border: 0;
   color: #f3f8ff;
@@ -329,13 +336,65 @@ video {
   outline: 0;
 }
 
-.device-select option {
+.mode-select select {
+  max-width: 180px;
+}
+
+.device-select option,
+.mode-select option {
   background: #101923;
   color: #f3f8ff;
 }
 
 .inspector section {
   padding: 16px;
+}
+
+.inspector .scene-panel {
+  order: 0;
+}
+
+.inspector > section:nth-of-type(2) {
+  order: 1;
+}
+
+.inspector > section:nth-of-type(3) {
+  order: 2;
+}
+
+.inspector.prioritize-action > section:nth-of-type(2) {
+  order: 2;
+}
+
+.inspector.prioritize-action > section:nth-of-type(3) {
+  order: 1;
+}
+
+.inspector > section:nth-of-type(n + 4) {
+  order: 3;
+}
+
+.scene-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.scene-tags span {
+  background: #103f36;
+  border: 1px solid #2dbb9f;
+  border-radius: 999px;
+  color: #dffdf5;
+  font-size: 12px;
+  padding: 5px 9px;
+}
+
+.scene-examples {
+  color: #d8e5ef;
+  line-height: 1.7;
+  margin: 0;
+  padding-left: 18px;
 }
 
 .summary {
