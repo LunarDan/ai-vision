@@ -14,7 +14,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AssistantPhase,
   ConversationResponse,
+  OmniServerEvent,
   SessionMetrics,
+  VideoStreamFrame,
   VisionActionTimeline,
   VisionSummary,
 } from "@ai-vision/shared";
@@ -28,15 +30,16 @@ const maxAutoVisionRequestsPerMinute = 6;
 const frameDiffThreshold = 10;
 const stableFrameSlowdownThreshold = 3;
 const actionSampleIntervalMs = 500;
-const actionWindowMs = 6000;
+const actionWindowMs = 12000;
 const actionAnalyzeIntervalMs = 6000;
-const maxActionFrames = 12;
-const maxSequenceFrames = 4;
-const actionFrameDiffThreshold = 8;
+const actionTimelineStaleMs = 10000;
+const maxActionFrames = 24;
+const maxSequenceFrames = 8;
+const actionFrameDiffThreshold = 4;
 const minActionFramesForSequence = 2;
-const actionFrameWidth = 256;
-const actionFrameQuality = 0.38;
-const actionQuestionBurstFrames = 4;
+const actionFrameWidth = 384;
+const actionFrameQuality = 0.5;
+const actionQuestionBurstFrames = 6;
 
 type TimelineMessage = {
   role: "assistant" | "system" | "user";
@@ -45,6 +48,7 @@ type TimelineMessage = {
 
 type VisionContextSyncState = "idle" | "pending" | "synced" | "failed";
 type BackendStatus = "unknown" | "online" | "offline";
+type VideoStreamStatus = "idle" | "connecting" | "connected" | "fallback";
 
 type CameraDiagnostics = {
   label: string;
@@ -63,6 +67,12 @@ type CapturedFrame = {
 type ActionFrame = CapturedFrame & {
   id: string;
   capturedAt: string;
+};
+
+type MediaStreamResult = {
+  stream: MediaStream;
+  hasAudio: boolean;
+  audioError?: unknown;
 };
 
 type SpeechRecognitionLike = {
@@ -133,6 +143,12 @@ export const App = () => {
   const actionSampleCountRef = useRef(0);
   const dedupedActionFrameCountRef = useRef(0);
   const actionAnalyzeErrorNotifiedRef = useRef(false);
+  const videoStreamSocketRef = useRef<WebSocket | null>(null);
+  const videoStreamStatusRef = useRef<VideoStreamStatus>("idle");
+  const videoStreamReplyResolverRef = useRef<
+    ((reply: string | null) => void) | null
+  >(null);
+  const lastVideoStreamErrorAtRef = useRef(0);
   const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(
     null,
   );
@@ -148,6 +164,20 @@ export const App = () => {
   const [cameraDiagnostics, setCameraDiagnostics] =
     useState<CameraDiagnostics | null>(null);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>("unknown");
+  const [videoStreamStatus, setVideoStreamStatus] =
+    useState<VideoStreamStatus>("idle");
+  const [streamedVideoFrameCount, setStreamedVideoFrameCount] = useState(0);
+  const [videoStreamCloudAnalyses, setVideoStreamCloudAnalyses] = useState(0);
+  const [videoStreamTimelineAnalyses, setVideoStreamTimelineAnalyses] =
+    useState(0);
+  const [videoStreamTimelineErrors, setVideoStreamTimelineErrors] = useState(0);
+  const [videoStreamBufferedFrames, setVideoStreamBufferedFrames] = useState(0);
+  const [lastVideoStreamAt, setLastVideoStreamAt] = useState<string | null>(
+    null,
+  );
+  const [lastVideoStreamError, setLastVideoStreamError] = useState<string | null>(
+    null,
+  );
   const [autoObserveEnabled, setAutoObserveEnabled] = useState(true);
   const [autoObserveIntervalMs] = useState(defaultAutoObserveIntervalMs);
   const [lastAutoVisionAt, setLastAutoVisionAt] = useState<string | null>(null);
@@ -191,6 +221,10 @@ export const App = () => {
   }, [autoObserveEnabled]);
 
   useEffect(() => {
+    videoStreamStatusRef.current = videoStreamStatus;
+  }, [videoStreamStatus]);
+
+  useEffect(() => {
     streamRef.current = stream;
   }, [stream]);
 
@@ -218,6 +252,15 @@ export const App = () => {
     if (metrics.visionRequests > 8) return appCopy.costLevels.medium;
     return appCopy.costLevels.low;
   }, [metrics.highDetailRequests, metrics.visionRequests]);
+
+  const videoStreamStatusLabel =
+    videoStreamStatus === "connected"
+      ? appCopy.videoStreamConnected
+      : videoStreamStatus === "connecting"
+        ? appCopy.videoStreamConnecting
+        : videoStreamStatus === "fallback"
+          ? appCopy.videoStreamFallback
+          : appCopy.videoStreamIdle;
 
   const bindVideoElement = useCallback((node: HTMLVideoElement | null) => {
     videoRef.current = node;
@@ -543,6 +586,149 @@ export const App = () => {
     }
   };
 
+  const createVideoStreamUrl = () => {
+    if (
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1"
+    ) {
+      return "ws://localhost:3001/api/omni/realtime";
+    }
+
+    const baseUrl = new URL(apiBase, window.location.origin);
+    baseUrl.protocol = baseUrl.protocol === "https:" ? "wss:" : "ws:";
+    if (baseUrl.port && baseUrl.port !== "3001") {
+      baseUrl.port = "3001";
+    }
+    baseUrl.pathname = `${baseUrl.pathname.replace(/\/$/, "")}/omni/realtime`;
+    return baseUrl.toString();
+  };
+
+  const connectVideoStream = useCallback(() => {
+    if (
+      videoStreamSocketRef.current &&
+      videoStreamSocketRef.current.readyState <= WebSocket.OPEN
+    ) {
+      return;
+    }
+
+    try {
+      setVideoStreamStatus("connecting");
+      const socket = new WebSocket(createVideoStreamUrl());
+      videoStreamSocketRef.current = socket;
+
+      socket.onopen = () => {
+        setVideoStreamStatus("connected");
+        socket.send(JSON.stringify({ type: "start", sessionId }));
+      };
+
+      socket.onmessage = (messageEvent) => {
+        const event = JSON.parse(String(messageEvent.data)) as OmniServerEvent;
+        if (event.type === "video_summary") {
+          setVisionSummary(event.snapshot);
+          visionSummaryRef.current = event.snapshot;
+          syncVisionContext(event.snapshot, { silent: true });
+        }
+        if (event.type === "action_timeline") {
+          lastActionTimelineRef.current = event.timeline;
+          setLastActionTimeline(event.timeline);
+          setLastActionTimelineAt(event.timeline.createdAt);
+        }
+        if (event.type === "video_status") {
+          if (videoStreamStatusRef.current !== "connected") {
+            setVideoStreamStatus("connected");
+            videoStreamStatusRef.current = "connected";
+          }
+          setStreamedVideoFrameCount(event.receivedFrames);
+          setVideoStreamBufferedFrames(event.bufferedFrames);
+          setVideoStreamCloudAnalyses(event.cloudAnalyses);
+          setVideoStreamTimelineAnalyses(event.timelineAnalyses);
+          setVideoStreamTimelineErrors(event.timelineErrors);
+          setLastVideoStreamError(event.lastError ?? null);
+          if (event.lastTimelineAt) {
+            setLastActionTimelineAt(event.lastTimelineAt);
+          }
+          setLastVideoStreamAt(event.updatedAt);
+        }
+        if (event.type === "text" && event.final) {
+          videoStreamReplyResolverRef.current?.(event.text);
+          videoStreamReplyResolverRef.current = null;
+        }
+        if (event.type === "error") {
+          videoStreamReplyResolverRef.current?.(null);
+          videoStreamReplyResolverRef.current = null;
+          setLastVideoStreamError(event.message);
+          const now = Date.now();
+          if (now - lastVideoStreamErrorAtRef.current > 5000) {
+            lastVideoStreamErrorAtRef.current = now;
+            appendSystemMessage(event.message);
+          }
+        }
+      };
+
+      socket.onerror = () => {
+        setVideoStreamStatus("fallback");
+      };
+
+      socket.onclose = () => {
+        videoStreamReplyResolverRef.current?.(null);
+        videoStreamReplyResolverRef.current = null;
+        if (mediaSessionActiveRef.current) {
+          setVideoStreamStatus("fallback");
+        } else {
+          setVideoStreamStatus("idle");
+        }
+      };
+    } catch {
+      setVideoStreamStatus("fallback");
+    }
+  }, [sessionId]);
+
+  const disconnectVideoStream = () => {
+    const socket = videoStreamSocketRef.current;
+    videoStreamSocketRef.current = null;
+    if (!socket) return;
+    try {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: "stop" }));
+      }
+      socket.close();
+    } catch {
+      // Ignore close races.
+    }
+    setVideoStreamStatus("idle");
+  };
+
+  const requestVideoStreamReply = (text: string) => {
+    const socket = videoStreamSocketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return null;
+
+    return new Promise<string | null>((resolve) => {
+      videoStreamReplyResolverRef.current?.(null);
+      videoStreamReplyResolverRef.current = resolve;
+      socket.send(JSON.stringify({ type: "text", text }));
+      window.setTimeout(() => {
+        if (videoStreamReplyResolverRef.current === resolve) {
+          videoStreamReplyResolverRef.current = null;
+          resolve(null);
+        }
+      }, 18000);
+    });
+  };
+
+  const sendVideoStreamFrame = (frame: ActionFrame) => {
+    const socket = videoStreamSocketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+
+    const payload: VideoStreamFrame = {
+      id: frame.id,
+      imageBase64: frame.imageBase64,
+      capturedAt: frame.capturedAt,
+      fingerprint: frame.fingerprint,
+    };
+    socket.send(JSON.stringify({ type: "video_frame", frame: payload }));
+    return true;
+  };
+
   const canRunAutoObserve = () =>
     autoObserveEnabledRef.current &&
     mediaSessionActiveRef.current &&
@@ -713,14 +899,13 @@ export const App = () => {
       return;
     }
 
-    updateActionFrames([
-      ...actionFramesRef.current,
-      {
-        ...capturedFrame,
-        id: crypto.randomUUID(),
-        capturedAt: new Date().toISOString(),
-      },
-    ]);
+    const actionFrame = {
+      ...capturedFrame,
+      id: crypto.randomUUID(),
+      capturedAt: new Date().toISOString(),
+    };
+    updateActionFrames([...actionFramesRef.current, actionFrame]);
+    sendVideoStreamFrame(actionFrame);
     scheduleActionSample();
   };
 
@@ -735,10 +920,28 @@ export const App = () => {
     }).filter(Boolean);
   };
 
-  const analyzeActionSequence = async () => {
+  const isActionTimelineStale = () =>
+    !lastActionTimelineRef.current ||
+    Date.now() - new Date(lastActionTimelineRef.current.createdAt).getTime() >
+      actionTimelineStaleMs;
+
+  const isFailedActionTimeline = (timeline: VisionActionTimeline) =>
+    timeline.summary.includes("动作序列模型调用失败") ||
+    timeline.confidenceNote.includes("模型调用失败");
+
+  const analyzeActionSequence = async (options: { force?: boolean } = {}) => {
     if (!canRunActionCapture()) {
       scheduleActionAnalyze();
       return null;
+    }
+
+    if (
+      !options.force &&
+      videoStreamStatusRef.current === "connected" &&
+      !isActionTimelineStale()
+    ) {
+      scheduleActionAnalyze();
+      return lastActionTimelineRef.current;
     }
 
     if (actionSequenceInFlightRef.current) {
@@ -776,6 +979,16 @@ export const App = () => {
       }
 
       const data = (await response.json()) as { timeline: VisionActionTimeline };
+      if (isFailedActionTimeline(data.timeline)) {
+        if (
+          !actionAnalyzeErrorNotifiedRef.current &&
+          !lastActionTimelineRef.current
+        ) {
+          actionAnalyzeErrorNotifiedRef.current = true;
+          appendSystemMessage(appCopy.actionAnalyzeError);
+        }
+        return null;
+      }
       actionAnalyzeErrorNotifiedRef.current = false;
       lastActionTimelineRef.current = data.timeline;
       setLastActionTimeline(data.timeline);
@@ -783,7 +996,10 @@ export const App = () => {
       setActionSequenceRequestCount((count) => count + 1);
       return data.timeline;
     } catch {
-      if (!actionAnalyzeErrorNotifiedRef.current) {
+      if (
+        !actionAnalyzeErrorNotifiedRef.current &&
+        !lastActionTimelineRef.current
+      ) {
         actionAnalyzeErrorNotifiedRef.current = true;
         appendSystemMessage(appCopy.actionAnalyzeError);
       }
@@ -815,14 +1031,13 @@ export const App = () => {
         dedupedActionFrameCountRef.current += 1;
         setDedupedActionFrameCount(dedupedActionFrameCountRef.current);
       } else {
-        updateActionFrames([
-          ...actionFramesRef.current,
-          {
-            ...capturedFrame,
-            id: crypto.randomUUID(),
-            capturedAt: new Date().toISOString(),
-          },
-        ]);
+        const actionFrame = {
+          ...capturedFrame,
+          id: crypto.randomUUID(),
+          capturedAt: new Date().toISOString(),
+        };
+        updateActionFrames([...actionFramesRef.current, actionFrame]);
+        sendVideoStreamFrame(actionFrame);
       }
 
       await new Promise<void>((resolve) =>
@@ -881,7 +1096,9 @@ export const App = () => {
       phase !== "speaking"
     ) {
       scheduleActionSample();
-      scheduleActionAnalyze(1800);
+      scheduleActionAnalyze(
+        videoStreamStatus === "connected" ? actionAnalyzeIntervalMs : 1800,
+      );
     }
 
     return () => {
@@ -901,6 +1118,29 @@ export const App = () => {
     phase,
     scheduleActionAnalyze,
     scheduleActionSample,
+    videoReady,
+    videoStreamStatus,
+  ]);
+
+  useEffect(() => {
+    const shouldStream =
+      autoObserveEnabled &&
+      cameraEnabled &&
+      backendStatus === "online" &&
+      videoReady &&
+      mediaSessionActiveRef.current;
+
+    if (shouldStream) {
+      connectVideoStream();
+      return;
+    }
+
+    disconnectVideoStream();
+  }, [
+    autoObserveEnabled,
+    backendStatus,
+    cameraEnabled,
+    connectVideoStream,
     videoReady,
   ]);
 
@@ -956,33 +1196,45 @@ export const App = () => {
         if (actionFramesRef.current.length < minActionFramesForSequence) {
           await captureActionBurst();
         }
-        currentActionTimeline =
-          (await analyzeActionSequence()) ?? currentActionTimeline;
+        if (!currentActionTimeline || videoStreamStatusRef.current !== "connected") {
+          currentActionTimeline =
+            (await analyzeActionSequence({ force: true })) ??
+            currentActionTimeline;
+        }
       }
 
-      const response = await fetch(`${apiBase}/conversation/respond`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId,
-          text,
-          visionSummary: currentVisionSummary,
-          visionTimeline: currentActionTimeline,
-        }),
-      });
+      let reply =
+        videoStreamStatusRef.current === "connected"
+          ? await requestVideoStreamReply(text)
+          : null;
 
-      if (!response.ok) {
-        throw new Error(`Conversation API failed with ${response.status}`);
+      if (!reply) {
+        const response = await fetch(`${apiBase}/conversation/respond`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId,
+            text,
+            visionSummary: currentVisionSummary,
+            visionTimeline: currentActionTimeline,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Conversation API failed with ${response.status}`);
+        }
+
+        const data = (await response.json()) as ConversationResponse;
+        reply = data.reply;
       }
 
-      const data = (await response.json()) as ConversationResponse;
-      appendAssistantMessage(data.reply);
+      appendAssistantMessage(reply);
       setPhase("speaking");
       stopSpeechRecognition(false);
 
       if ("speechSynthesis" in window) {
         window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(data.reply);
+        const utterance = new SpeechSynthesisUtterance(reply);
         utterance.lang = "zh-CN";
         let speechFinished = false;
         const resumeAfterSpeech = () => {
@@ -993,7 +1245,7 @@ export const App = () => {
         };
         const fallbackMs = Math.max(
           3500,
-          Math.min(18000, data.reply.length * 220),
+          Math.min(18000, reply.length * 220),
         );
         const speechFallbackTimer = window.setTimeout(
           resumeAfterSpeech,
@@ -1075,7 +1327,9 @@ export const App = () => {
     }
   };
 
-  const createMediaStream = (cameraDeviceId = selectedCameraDeviceId) => {
+  const createMediaStream = async (
+    cameraDeviceId = selectedCameraDeviceId,
+  ): Promise<MediaStreamResult> => {
     const video: MediaTrackConstraints = cameraDeviceId
       ? {
           deviceId: { exact: cameraDeviceId },
@@ -1088,10 +1342,55 @@ export const App = () => {
           facingMode: "user",
         };
 
-    return navigator.mediaDevices.getUserMedia({
-      video,
-      audio: true,
-    });
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video,
+        audio: true,
+      });
+      return { stream: mediaStream, hasAudio: mediaStream.getAudioTracks().length > 0 };
+    } catch (error) {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video,
+        audio: false,
+      });
+      return { stream: mediaStream, hasAudio: false, audioError: error };
+    }
+  };
+
+  const getCameraErrorMessage = (error: unknown) => {
+    if (error instanceof Error && error.message === "INSECURE_MEDIA_CONTEXT") {
+      return appCopy.cameraSecureContextError;
+    }
+
+    if (error instanceof DOMException) {
+      if (error.name === "NotAllowedError" || error.name === "SecurityError") {
+        return appCopy.cameraPermissionDeniedError;
+      }
+      if (error.name === "NotFoundError" || error.name === "OverconstrainedError") {
+        return appCopy.cameraNotFoundError;
+      }
+      if (error.name === "NotReadableError" || error.name === "AbortError") {
+        return appCopy.cameraDeviceBusyError;
+      }
+    }
+
+    return appCopy.cameraPermissionError;
+  };
+
+  const getMicrophoneErrorMessage = (error: unknown) => {
+    if (error instanceof DOMException) {
+      if (error.name === "NotAllowedError" || error.name === "SecurityError") {
+        return appCopy.microphonePermissionDeniedError;
+      }
+      if (error.name === "NotFoundError" || error.name === "OverconstrainedError") {
+        return appCopy.microphoneNotFoundError;
+      }
+      if (error.name === "NotReadableError" || error.name === "AbortError") {
+        return appCopy.microphoneBusyError;
+      }
+    }
+
+    return appCopy.microphoneUnavailableMessage;
   };
 
   const startMedia = async () => {
@@ -1102,25 +1401,37 @@ export const App = () => {
         throw new Error("INSECURE_MEDIA_CONTEXT");
       }
 
-      mediaStream = await createMediaStream();
+      const mediaResult = await createMediaStream();
+      mediaStream = mediaResult.stream;
       const videoTrack = mediaStream.getVideoTracks()[0];
       mediaSessionActiveRef.current = true;
       streamRef.current = mediaStream;
       setStream(mediaStream);
       setCameraEnabled(true);
-      setMicEnabled(true);
+      setMicEnabled(mediaResult.hasAudio);
       setAutoObserveEnabled(true);
       setSelectedCameraDeviceId(
         videoTrack?.getSettings().deviceId || selectedCameraDeviceId,
       );
       updateCameraDiagnostics(mediaStream, videoRef.current);
       void refreshCameraDevices();
-      appendSystemMessage(appCopy.mediaConnectedMessage);
+      appendSystemMessage(
+        mediaResult.hasAudio
+          ? appCopy.mediaConnectedMessage
+          : appCopy.mediaVideoOnlyMessage,
+      );
+      if (mediaResult.audioError) {
+        appendSystemMessage(getMicrophoneErrorMessage(mediaResult.audioError));
+      }
       const backendReady = await checkBackendHealth();
       if (backendReady) {
         setPhase("listening");
-        appendSystemMessage(appCopy.realtimeConnectedMessage);
-        startSpeechRecognition();
+        if (mediaResult.hasAudio) {
+          appendSystemMessage(appCopy.realtimeConnectedMessage);
+          startSpeechRecognition();
+        } else {
+          appendSystemMessage(appCopy.microphoneUnavailableMessage);
+        }
       } else {
         setPhase("error");
         appendSystemMessage(appCopy.voiceDisabledBackendOffline);
@@ -1134,11 +1445,7 @@ export const App = () => {
       setVideoReady(false);
       setCameraDiagnostics(null);
       setPhase("error");
-      appendSystemMessage(
-        error instanceof Error && error.message === "INSECURE_MEDIA_CONTEXT"
-          ? appCopy.cameraSecureContextError
-          : appCopy.cameraPermissionError,
-      );
+      appendSystemMessage(getCameraErrorMessage(error));
     }
   };
 
@@ -1158,6 +1465,7 @@ export const App = () => {
       window.clearTimeout(actionAnalyzeTimerRef.current);
       actionAnalyzeTimerRef.current = null;
     }
+    disconnectVideoStream();
     stream?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     lastFrameFingerprintRef.current = null;
@@ -1203,6 +1511,7 @@ export const App = () => {
       track.enabled = !cameraEnabled;
     });
     if (cameraEnabled) {
+      disconnectVideoStream();
       lastFrameFingerprintRef.current = null;
       stableFrameCountRef.current = 0;
       actionFramesRef.current = [];
@@ -1219,6 +1528,7 @@ export const App = () => {
     if (!stream) return;
 
     stopSpeechRecognition(false);
+    disconnectVideoStream();
     stream.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     lastFrameFingerprintRef.current = null;
@@ -1233,24 +1543,33 @@ export const App = () => {
     setPhase("connecting");
 
     try {
-      const mediaStream = await createMediaStream(deviceId);
+      const mediaResult = await createMediaStream(deviceId);
+      const mediaStream = mediaResult.stream;
       mediaSessionActiveRef.current = true;
       streamRef.current = mediaStream;
       setStream(mediaStream);
       setCameraEnabled(true);
-      setMicEnabled(true);
+      setMicEnabled(mediaResult.hasAudio);
       updateCameraDiagnostics(mediaStream, videoRef.current);
       appendSystemMessage(appCopy.cameraSwitchedMessage);
       setPhase(backendStatus === "online" ? "listening" : "error");
       if (backendStatusRef.current === "online") {
-        resumeSpeechRecognition();
+        if (mediaResult.hasAudio) {
+          resumeSpeechRecognition();
+        } else {
+          appendSystemMessage(
+            mediaResult.audioError
+              ? getMicrophoneErrorMessage(mediaResult.audioError)
+              : appCopy.microphoneUnavailableMessage,
+          );
+        }
       }
-    } catch {
+    } catch (error) {
       mediaSessionActiveRef.current = false;
       streamRef.current = null;
       setCameraEnabled(false);
       setPhase("error");
-      appendSystemMessage(appCopy.cameraPermissionError);
+      appendSystemMessage(getCameraErrorMessage(error));
     }
   };
 
@@ -1348,6 +1667,7 @@ export const App = () => {
                   ? appCopy.backendOffline
                   : appCopy.backendUnknown}
             </span>
+            <span>{videoStreamStatusLabel}</span>
           </div>
         </div>
 
@@ -1382,7 +1702,7 @@ export const App = () => {
           </button>
           <button
             onClick={toggleMic}
-            disabled={!stream}
+            disabled={!stream || stream.getAudioTracks().length === 0}
             title={appCopy.toggleMicTitle}
           >
             {micEnabled ? <Mic size={18} /> : <MicOff size={18} />}
@@ -1523,6 +1843,44 @@ export const App = () => {
           <div>
             <span>{appCopy.metricActionBuffer}</span>
             <strong>{actionFrames.length}</strong>
+          </div>
+          <div>
+            <span>{appCopy.metricVideoStreamStatus}</span>
+            <strong className="compact-metric">{videoStreamStatusLabel}</strong>
+          </div>
+          <div>
+            <span>{appCopy.metricStreamedFrames}</span>
+            <strong>{streamedVideoFrameCount}</strong>
+          </div>
+          <div>
+            <span>{appCopy.metricStreamBuffer}</span>
+            <strong>{videoStreamBufferedFrames}</strong>
+          </div>
+          <div>
+            <span>{appCopy.metricStreamCloudAnalyses}</span>
+            <strong>{videoStreamCloudAnalyses}</strong>
+          </div>
+          <div>
+            <span>{appCopy.metricStreamTimelineAnalyses}</span>
+            <strong>{videoStreamTimelineAnalyses}</strong>
+          </div>
+          <div>
+            <span>{appCopy.metricStreamTimelineErrors}</span>
+            <strong>{videoStreamTimelineErrors}</strong>
+          </div>
+          <div>
+            <span>{appCopy.metricLastVideoStreamAt}</span>
+            <strong className="compact-metric">
+              {lastVideoStreamAt
+                ? new Date(lastVideoStreamAt).toLocaleTimeString()
+                : appCopy.noAutoVisionYet}
+            </strong>
+          </div>
+          <div>
+            <span>{appCopy.metricLastStreamError}</span>
+            <strong className="compact-metric">
+              {lastVideoStreamError ?? appCopy.noAutoVisionYet}
+            </strong>
           </div>
           <div>
             <span>{appCopy.metricLastActionTimelineAt}</span>

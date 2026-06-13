@@ -4,6 +4,8 @@ export const appCopy = {
   initialAssistantMessage:
     "准备就绪。授权摄像头和麦克风后，我可以一边看画面，一边听你说话。",
   mediaConnectedMessage: "摄像头和麦克风已连接。",
+  mediaVideoOnlyMessage:
+    "摄像头已连接，但麦克风不可用；可以先使用画面分析，语音识别可能无法启动。",
   cameraSwitchedMessage: "已切换摄像头设备。",
   realtimeConnectedMessage: "语音识别已启动，可以开始说话。",
   backendOnlineMessage: "后端服务已连接。",
@@ -13,7 +15,21 @@ export const appCopy = {
     "摄像头预览可继续使用；后端未运行时，语音问题不会发送。",
   realtimeConnectionError:
     "语音通道连接失败，请确认后端服务、DashScope Key 和浏览器授权正常。",
-  cameraPermissionError: "无法连接摄像头或麦克风，请检查浏览器授权后重试。",
+  cameraPermissionError: "无法连接摄像头，请检查浏览器授权后重试。",
+  cameraDeviceBusyError:
+    "摄像头可能正被其他程序占用，请关闭会议软件、相机应用或浏览器其他页面后重试。",
+  cameraNotFoundError:
+    "没有找到可用摄像头，请确认设备已接入并允许浏览器访问。",
+  cameraPermissionDeniedError:
+    "浏览器拒绝了摄像头权限，请在地址栏左侧站点设置中允许摄像头后重试。",
+  microphoneUnavailableMessage:
+    "麦克风不可用或未授权，本次会话已降级为仅摄像头模式。",
+  microphonePermissionDeniedError:
+    "浏览器拒绝了麦克风权限，请在地址栏左侧站点设置中允许麦克风后重试。",
+  microphoneNotFoundError:
+    "没有找到可用麦克风，请确认设备已接入并在系统中启用。",
+  microphoneBusyError:
+    "麦克风可能正被其他程序占用，请关闭会议软件、录音软件或浏览器其他页面后重试。",
   cameraSecureContextError:
     "浏览器只允许在 localhost 或 HTTPS 页面使用摄像头和麦克风。请用 http://localhost:5173 打开，或为局域网地址配置 HTTPS。",
   cameraPlaybackError:
@@ -46,6 +62,10 @@ export const appCopy = {
   backendOnline: "Backend online",
   backendOffline: "Backend offline",
   backendUnknown: "Backend unknown",
+  videoStreamConnected: "Video stream connected",
+  videoStreamConnecting: "Video stream connecting",
+  videoStreamFallback: "Video stream fallback",
+  videoStreamIdle: "Video stream idle",
   cameraDeviceLabel: "摄像头",
   cameraDevicePlaceholder: "授权后显示设备",
   unknownCamera: "摄像头",
@@ -92,6 +112,14 @@ export const appCopy = {
   metricActionSequenceRequests: "动作分析",
   metricLastActionTimelineAt: "最近动作更新",
   metricActionBuffer: "动作缓冲",
+  metricVideoStreamStatus: "视频流",
+  metricStreamedFrames: "流式帧",
+  metricStreamBuffer: "流缓冲",
+  metricStreamCloudAnalyses: "流式云分析",
+  metricStreamTimelineAnalyses: "流式动作成功",
+  metricStreamTimelineErrors: "流式动作失败",
+  metricLastVideoStreamAt: "最近流更新",
+  metricLastStreamError: "最近流错误",
   noAutoVisionYet: "暂无",
   fingerprintReady: "已建立",
   fingerprintPending: "等待中",
@@ -99,7 +127,8 @@ export const appCopy = {
   strategies: [
     "自动观察本地 2 FPS 采样",
     "低变化动作帧本地去重",
-    "云端只接收短序列关键帧",
+    "WebSocket 只推送去重关键帧",
+    "云端按 3-10 秒节流分析短序列",
     "图片压缩到 768px 宽",
     "默认 detail: low",
     "每分钟最多 6 次自动视觉请求",
