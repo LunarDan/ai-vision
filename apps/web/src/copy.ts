@@ -1,4 +1,44 @@
-import type { AssistantPhase } from "@ai-vision/shared";
+import type { AssistantPhase, SceneMode } from "@ai-vision/shared";
+
+export type SceneModeProfile = {
+  label: string;
+  description: string;
+  focus: string[];
+  examples: string[];
+};
+
+export const sceneModeCopy: Record<SceneMode, SceneModeProfile> = {
+  general: {
+    label: "通用视觉对话",
+    description: "均衡理解当前画面、最近动作和历史追问。",
+    focus: ["当前画面", "最近动作", "连续追问"],
+    examples: ["你现在看到了什么？", "刚才发生了什么？"],
+  },
+  action: {
+    label: "动作理解助手",
+    description: "优先理解最近几秒的动作、移动和手势变化。",
+    focus: ["动作时间线", "手势变化", "物体移动"],
+    examples: ["我刚才做了什么动作？", "我有没有拿起东西？"],
+  },
+  study: {
+    label: "桌面学习助手",
+    description: "关注纸张、笔记、题目、书本和桌面内容。",
+    focus: ["纸张/笔记", "桌面物品", "学习追问"],
+    examples: ["我手里拿的是什么？", "帮我看一下这页内容。"],
+  },
+  interview: {
+    label: "演讲/面试练习助手",
+    description: "观察姿态、视线、手势和表达状态，给出简短建议。",
+    focus: ["坐姿视线", "手势状态", "表达反馈"],
+    examples: ["我刚才表现怎么样？", "我的坐姿和视线自然吗？"],
+  },
+  life: {
+    label: "生活提醒助手",
+    description: "关注物品变化、桌面状态和需要注意的轻量提醒。",
+    focus: ["物品变化", "桌面状态", "潜在提醒"],
+    examples: ["画面里有什么需要注意？", "桌面上有什么变化？"],
+  },
+};
 
 export const appCopy = {
   initialAssistantMessage:

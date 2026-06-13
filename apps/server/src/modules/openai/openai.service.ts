@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import type {
   ConversationHistoryItem,
   ConversationRequest,
+  SceneMode,
   VisionActionStep,
   VisionSequenceFrame,
 } from "@ai-vision/shared";
@@ -16,6 +17,19 @@ type ImageSequenceAnalysis = {
   summary: string;
   steps: VisionActionStep[];
   confidenceNote: string;
+};
+
+const sceneModePrompts: Record<SceneMode, string> = {
+  general:
+    "当前场景是通用视觉对话。请均衡参考画面摘要、动作时间线和历史对话，直接回答用户问题。",
+  action:
+    "当前场景是动作理解助手。用户通常关心刚才做了什么、有没有移动、手势或连续变化。回答时优先参考最近几秒动作时间线，再结合当前画面摘要；不要把静态外观误判成动作。",
+  study:
+    "当前场景是桌面学习助手。用户通常会展示纸张、笔记、题目、书本、桌面物品或屏幕外内容。回答时优先解释当前画面中可见的学习/办公内容，并支持基于历史的连续追问。",
+  interview:
+    "当前场景是演讲/面试练习助手。用户通常希望获得表达状态、视线、坐姿、手势和临场表现反馈。回答时给出简短、建设性的观察与建议；如果无法从画面判断，请明确说明。",
+  life:
+    "当前场景是生活提醒助手。用户通常关心画面里的物品、变化和需要注意的地方。回答时偏向轻量提醒、物品变化和潜在风险，但不要夸大危险或做无法确认的判断。",
 };
 
 const formatHistoryItem = (item: ConversationHistoryItem) => {
@@ -154,6 +168,8 @@ export class OpenaiService {
 
   async createConversationReply(request: ConversationRequest) {
     const model = process.env.OPENAI_VISION_MODEL ?? "qwen3.5-omni-plus";
+    const sceneMode = request.sceneMode ?? "general";
+    const sceneContext = sceneModePrompts[sceneMode];
     const historyContext =
       request.history && request.history.length > 0
         ? [
@@ -186,11 +202,11 @@ export class OpenaiService {
         {
           role: "system",
           content:
-            "你是一个通义千问视觉语音助手。回答要自然、简短、中文优先。用户问当前画面时，参考最近摄像头关键帧摘要；用户问刚才发生了什么、做了什么动作、手势或连续变化时，优先参考最近几秒多帧动作时间线。用户追问前文时，参考最近对话历史。如果摘要、时间线或历史可能漏帧、过期、信息不足或无法确定，要明确说明不确定，不要假装正在连续观看完整实时视频。",
+            "你是一个通义千问视觉语音助手。回答要自然、简短、中文优先。用户问当前画面时，参考最近摄像头关键帧摘要；用户问刚才发生了什么、做了什么动作、手势或连续变化时，优先参考最近几秒多帧动作时间线。用户追问前文时，参考最近对话历史。场景模式只改变回答侧重点，不改变事实判断。如果摘要、时间线或历史可能漏帧、过期、信息不足或无法确定，要明确说明不确定，不要假装正在连续观看完整实时视频。",
         },
         {
           role: "user",
-          content: `${historyContext}\n\n${visualContext}\n\n${actionContext}\n\n用户语音文本：${request.text}`,
+          content: `${sceneContext}\n\n${historyContext}\n\n${visualContext}\n\n${actionContext}\n\n用户语音文本：${request.text}`,
         },
       ],
     });

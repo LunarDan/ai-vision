@@ -15,12 +15,13 @@ import type {
   AssistantPhase,
   ConversationResponse,
   OmniServerEvent,
+  SceneMode,
   SessionMetrics,
   VideoStreamFrame,
   VisionActionTimeline,
   VisionSummary,
 } from "@ai-vision/shared";
-import { appCopy, phaseLabels } from "./copy.js";
+import { appCopy, phaseLabels, sceneModeCopy } from "./copy.js";
 
 const apiBase = "/api";
 const defaultAutoObserveIntervalMs = 10000;
@@ -49,6 +50,10 @@ type TimelineMessage = {
 type VisionContextSyncState = "idle" | "pending" | "synced" | "failed";
 type BackendStatus = "unknown" | "online" | "offline";
 type VideoStreamStatus = "idle" | "connecting" | "connected" | "fallback";
+
+const sceneModeOptions = Object.entries(sceneModeCopy) as Array<
+  [SceneMode, (typeof sceneModeCopy)[SceneMode]]
+>;
 
 type CameraDiagnostics = {
   label: string;
@@ -156,6 +161,7 @@ export const App = () => {
   );
   const [phase, setPhase] = useState<AssistantPhase>("idle");
   const [sessionId] = useState(() => crypto.randomUUID());
+  const [sceneMode, setSceneMode] = useState<SceneMode>("general");
   const [metrics, setMetrics] = useState(() => createInitialMetrics(sessionId));
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [micEnabled, setMicEnabled] = useState(true);
@@ -731,7 +737,7 @@ export const App = () => {
     return new Promise<string | null>((resolve) => {
       videoStreamReplyResolverRef.current?.(null);
       videoStreamReplyResolverRef.current = resolve;
-      socket.send(JSON.stringify({ type: "text", text }));
+      socket.send(JSON.stringify({ type: "text", text, sceneMode }));
       window.setTimeout(() => {
         if (videoStreamReplyResolverRef.current === resolve) {
           videoStreamReplyResolverRef.current = null;
@@ -1241,6 +1247,7 @@ export const App = () => {
           body: JSON.stringify({
             sessionId,
             text,
+            sceneMode,
             visionSummary: currentVisionSummary,
             visionTimeline: currentActionTimeline,
           }),
@@ -1619,6 +1626,10 @@ export const App = () => {
     }
   };
 
+  const sceneModeProfile = sceneModeCopy[sceneMode];
+  const prioritizeActionPanel =
+    sceneMode === "action" || sceneMode === "interview";
+
   return (
     <main className="shell">
       <aside className="sidebar">
@@ -1646,6 +1657,19 @@ export const App = () => {
             <p className="eyebrow">{appCopy.realtimeLabel}</p>
             <h2>{appCopy.stageTitle}</h2>
           </div>
+          <label className="mode-select">
+            <span>场景模式</span>
+            <select
+              value={sceneMode}
+              onChange={(event) => setSceneMode(event.target.value as SceneMode)}
+            >
+              {sceneModeOptions.map(([mode, profile]) => (
+                <option key={mode} value={mode}>
+                  {profile.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className={`status ${phase}`}>{phaseLabels[phase]}</div>
         </header>
 
@@ -1780,7 +1804,24 @@ export const App = () => {
         </div>
       </section>
 
-      <aside className="inspector">
+      <aside
+        className={`inspector ${prioritizeActionPanel ? "prioritize-action" : ""}`}
+      >
+        <section className="scene-panel">
+          <p className="eyebrow">Scene Mode</p>
+          <h3>{sceneModeProfile.label}</h3>
+          <p className="summary">{sceneModeProfile.description}</p>
+          <div className="scene-tags">
+            {sceneModeProfile.focus.map((item) => (
+              <span key={item}>{item}</span>
+            ))}
+          </div>
+          <ul className="scene-examples">
+            {sceneModeProfile.examples.map((example) => (
+              <li key={example}>{example}</li>
+            ))}
+          </ul>
+        </section>
         <section>
           <p className="eyebrow">{appCopy.visionSummaryLabel}</p>
           <h3>{appCopy.currentViewTitle}</h3>
