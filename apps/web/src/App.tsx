@@ -1,14 +1,21 @@
-import {
+﻿import {
+  Activity,
+  AlertTriangle,
   Camera,
+  CheckCircle2,
   CircleStop,
   Eye,
   EyeOff,
   Mic,
   MicOff,
   PhoneCall,
+  Radio,
   ScanEye,
+  Sparkles,
   Video,
   VideoOff,
+  Wifi,
+  XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -21,6 +28,26 @@ import type {
   VisionActionTimeline,
   VisionSummary,
 } from "@ai-vision/shared";
+import { Alert } from "./components/ui/alert.js";
+import { Badge } from "./components/ui/badge.js";
+import { Button } from "./components/ui/button.js";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "./components/ui/card.js";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select.js";
+import { Separator } from "./components/ui/separator.js";
+import { Switch } from "./components/ui/switch.js";
+import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs.js";
 import { appCopy, phaseLabels, sceneModeCopy } from "./copy.js";
 
 const apiBase = "/api";
@@ -1629,22 +1656,174 @@ export const App = () => {
   const sceneModeProfile = sceneModeCopy[sceneMode];
   const prioritizeActionPanel =
     sceneMode === "action" || sceneMode === "interview";
+  const isBackendOffline = backendStatus === "offline";
+  const statusItems = [
+    {
+      label: cameraEnabled
+        ? videoReady
+          ? appCopy.cameraOnline
+          : appCopy.cameraStarting
+        : appCopy.cameraOffline,
+      variant: cameraEnabled && videoReady ? "success" : cameraEnabled ? "warning" : "muted",
+      icon: cameraEnabled && videoReady ? CheckCircle2 : Camera,
+    },
+    {
+      label: micEnabled ? appCopy.micOnline : appCopy.micMuted,
+      variant: micEnabled ? "success" : "muted",
+      icon: micEnabled ? Mic : MicOff,
+    },
+    {
+      label:
+        backendStatus === "online"
+          ? appCopy.backendOnline
+          : backendStatus === "offline"
+            ? appCopy.backendOffline
+            : appCopy.backendUnknown,
+      variant:
+        backendStatus === "online"
+          ? "success"
+          : backendStatus === "offline"
+            ? "danger"
+            : "warning",
+      icon:
+        backendStatus === "online"
+          ? Wifi
+          : backendStatus === "offline"
+            ? XCircle
+            : AlertTriangle,
+    },
+    {
+      label: videoStreamStatusLabel,
+      variant:
+        videoStreamStatus === "connected"
+          ? "success"
+          : videoStreamStatus === "fallback"
+            ? "warning"
+            : "muted",
+      icon: Radio,
+    },
+  ] as const;
+  const primaryMetrics = [
+    [appCopy.metricCostLevel, costLevel],
+    [appCopy.metricVisionRequests, metrics.visionRequests],
+    [appCopy.metricActionSequenceRequests, actionSequenceRequestCount],
+    [appCopy.metricStreamCloudAnalyses, videoStreamCloudAnalyses],
+  ];
+  const streamMetrics = [
+    [appCopy.metricAutoVisionRequests, autoVisionRequestCount],
+    [appCopy.metricSkippedFrames, skippedFrameCount],
+    [appCopy.metricActionSamples, actionSampleCount],
+    [appCopy.metricDedupedActionFrames, dedupedActionFrameCount],
+    [appCopy.metricActionBuffer, actionFrames.length],
+    [appCopy.metricStreamedFrames, streamedVideoFrameCount],
+    [appCopy.metricStreamBuffer, videoStreamBufferedFrames],
+    [appCopy.metricStreamTimelineAnalyses, videoStreamTimelineAnalyses],
+    [appCopy.metricStreamTimelineErrors, videoStreamTimelineErrors],
+  ];
+  const lastUpdatedItems = [
+    [
+      appCopy.metricLastAutoVisionAt,
+      lastAutoVisionAt
+        ? new Date(lastAutoVisionAt).toLocaleTimeString()
+        : appCopy.noAutoVisionYet,
+    ],
+    [
+      appCopy.metricLastActionTimelineAt,
+      lastActionTimelineAt
+        ? new Date(lastActionTimelineAt).toLocaleTimeString()
+        : appCopy.noAutoVisionYet,
+    ],
+    [
+      appCopy.metricLastVideoStreamAt,
+      lastVideoStreamAt
+        ? new Date(lastVideoStreamAt).toLocaleTimeString()
+        : appCopy.noAutoVisionYet,
+    ],
+    [appCopy.metricLastStreamError, lastVideoStreamError ?? appCopy.noAutoVisionYet],
+  ];
+  const VisionSummaryPanel = () => (
+    <Card className="context-card vision-card">
+      <CardHeader>
+        <p className="eyebrow">{appCopy.visionSummaryLabel}</p>
+        <CardTitle>{appCopy.currentViewTitle}</CardTitle>
+        <CardDescription>
+          {visionSummary
+            ? `${appCopy.updatedAt} ${new Date(visionSummary.createdAt).toLocaleTimeString()}`
+            : appCopy.waitingFirstFrame}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <p className="summary">{visionSummary?.summary ?? appCopy.emptySummary}</p>
+        <Badge className={`sync-status ${visionContextSyncState}`} variant="muted">
+          {appCopy.visionContextSyncLabels[visionContextSyncState]}
+          {visionContextSyncedAt
+            ? ` · ${new Date(visionContextSyncedAt).toLocaleTimeString()}`
+            : ""}
+        </Badge>
+      </CardContent>
+    </Card>
+  );
+  const ActionTimelinePanel = () => (
+    <Card className="context-card action-card">
+      <CardHeader>
+        <p className="eyebrow">{appCopy.actionTimelineLabel}</p>
+        <CardTitle>{appCopy.recentActionTitle}</CardTitle>
+        <CardDescription>
+          {lastActionTimelineAt
+            ? `${appCopy.updatedAt} ${new Date(lastActionTimelineAt).toLocaleTimeString()}`
+            : appCopy.waitingFirstFrame}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <p className="summary">
+          {lastActionTimeline?.summary ?? appCopy.emptyActionTimeline}
+        </p>
+        {lastActionTimeline?.steps.length ? (
+          <ul className="action-steps">
+            {lastActionTimeline.steps.map((step) => (
+              <li key={`${step.timeRange}-${step.description}`}>
+                <span>{step.timeRange}</span>
+                {step.description}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {lastActionTimeline ? (
+          <p className="confidence-note">
+            {appCopy.confidenceNoteLabel}: {lastActionTimeline.confidenceNote}
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
 
   return (
-    <main className="shell">
+    <main className="shell dark">
       <aside className="sidebar">
-        <div>
-          <p className="eyebrow">AI Vision</p>
-          <h1>{appCopy.title}</h1>
+        <div className="brand-block">
+          <div className="brand-mark">
+            <Sparkles size={18} />
+          </div>
+          <div>
+            <p className="eyebrow">AI Vision</p>
+            <h1>{appCopy.title}</h1>
+          </div>
         </div>
-        <div className="session-card active">
-          <span>{appCopy.currentSession}</span>
-          <strong>{phaseLabels[phase]}</strong>
-        </div>
-        <div className="timeline" ref={timelineRef}>
+
+        <Card className="session-card active">
+          <CardContent>
+            <span>{appCopy.currentSession}</span>
+            <strong>{phaseLabels[phase]}</strong>
+            <p>{sceneModeProfile.label}</p>
+          </CardContent>
+        </Card>
+
+        <div className="timeline" ref={timelineRef} aria-live="polite">
           {messages.map((message, index) => (
-            <div className="message" key={`${message.role}-${index}`}>
-              <span>{message.role}</span>
+            <div className={`message ${message.role}`} key={`${message.role}-${index}`}>
+              <span>
+                {message.role === "assistant" ? "AI" : message.role === "user" ? "User" : "System"}
+              </span>
               <p>{message.content}</p>
             </div>
           ))}
@@ -1657,23 +1836,45 @@ export const App = () => {
             <p className="eyebrow">{appCopy.realtimeLabel}</p>
             <h2>{appCopy.stageTitle}</h2>
           </div>
-          <label className="mode-select">
-            <span>场景模式</span>
-            <select
-              value={sceneMode}
-              onChange={(event) => setSceneMode(event.target.value as SceneMode)}
-            >
-              {sceneModeOptions.map(([mode, profile]) => (
-                <option key={mode} value={mode}>
-                  {profile.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className={`status ${phase}`}>{phaseLabels[phase]}</div>
+          <Badge className={`status ${phase}`} variant="default">
+            <Activity size={14} />
+            {phaseLabels[phase]}
+          </Badge>
         </header>
 
+        {isBackendOffline ? (
+          <Alert className="status-alert">
+            <AlertTriangle size={16} />
+            <span>{appCopy.backendOfflineMessage}</span>
+          </Alert>
+        ) : null}
+
+        <Tabs
+          className="scene-tabs"
+          value={sceneMode}
+          onValueChange={(value) => setSceneMode(value as SceneMode)}
+        >
+          <TabsList>
+            {sceneModeOptions.map(([mode, profile]) => (
+              <TabsTrigger key={mode} value={mode}>
+                {profile.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+
         <div className="video-wrap">
+          <div className="video-status-rail">
+            {statusItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Badge key={item.label} variant={item.variant}>
+                  <Icon size={13} />
+                  {item.label}
+                </Badge>
+              );
+            })}
+          </div>
           {cameraEnabled ? (
             <video
               ref={bindVideoElement}
@@ -1687,7 +1888,8 @@ export const App = () => {
           ) : (
             <div className="empty-video">
               <Camera size={44} />
-              {appCopy.emptyVideo}
+              <strong>{appCopy.emptyVideo}</strong>
+              <span>Connect devices to start visual conversation.</span>
             </div>
           )}
           <canvas ref={canvasRef} hidden />
@@ -1695,290 +1897,161 @@ export const App = () => {
             <div className="camera-diagnostics">
               <strong>{cameraDiagnostics.label}</strong>
               <span>
-                {cameraDiagnostics.width || "-"} x{" "}
-                {cameraDiagnostics.height || "-"} ·{" "}
-                {cameraDiagnostics.readyState}
-                {cameraDiagnostics.muted
-                  ? ` · ${appCopy.cameraMutedState}`
-                  : ""}
+                {cameraDiagnostics.width || "-"} x {cameraDiagnostics.height || "-"} · {cameraDiagnostics.readyState}
+                {cameraDiagnostics.muted ? ` · ${appCopy.cameraMutedState}` : ""}
               </span>
             </div>
           ) : null}
-          <div className="video-overlay">
-            <span>
-              {cameraEnabled
-                ? videoReady
-                  ? appCopy.cameraOnline
-                  : appCopy.cameraStarting
-                : appCopy.cameraOffline}
-            </span>
-            <span>{micEnabled ? appCopy.micOnline : appCopy.micMuted}</span>
-            <span>
-              {backendStatus === "online"
-                ? appCopy.backendOnline
-                : backendStatus === "offline"
-                  ? appCopy.backendOffline
-                  : appCopy.backendUnknown}
-            </span>
-            <span>{videoStreamStatusLabel}</span>
-          </div>
         </div>
 
-        <div className="controlbar">
-          <label className="device-select">
-            <span>{appCopy.cameraDeviceLabel}</span>
-            <select
-              value={selectedCameraDeviceId}
-              disabled={cameraDevices.length === 0}
-              onChange={(event) => {
-                void switchCamera(event.target.value);
-              }}
-            >
-              {cameraDevices.length === 0 ? (
-                <option value="">{appCopy.cameraDevicePlaceholder}</option>
-              ) : (
-                cameraDevices.map((device, index) => (
-                  <option key={device.deviceId} value={device.deviceId}>
-                    {device.label || `${appCopy.unknownCamera} ${index + 1}`}
-                  </option>
-                ))
-              )}
-            </select>
-          </label>
-          <button
-            onClick={startMedia}
-            disabled={cameraEnabled}
-            title={appCopy.connectTitle}
-          >
-            <PhoneCall size={18} />
-            {appCopy.connect}
-          </button>
-          <button
-            onClick={toggleMic}
-            disabled={!stream || stream.getAudioTracks().length === 0}
-            title={appCopy.toggleMicTitle}
-          >
-            {micEnabled ? <Mic size={18} /> : <MicOff size={18} />}
-            {appCopy.toggleMic}
-          </button>
-          <button
-            onClick={toggleCamera}
-            disabled={!stream}
-            title={appCopy.toggleCameraTitle}
-          >
-            {cameraEnabled ? <Video size={18} /> : <VideoOff size={18} />}
-            {appCopy.toggleCamera}
-          </button>
-          <button
-            onClick={() => setAutoObserveEnabled((value) => !value)}
-            disabled={!stream}
-            title={appCopy.autoObserveTitle}
-          >
-            {autoObserveEnabled ? <Eye size={18} /> : <EyeOff size={18} />}
-            {appCopy.autoObserve}
-          </button>
-          <button
-            onClick={analyzeFrame}
-            disabled={!cameraEnabled}
-            title={appCopy.analyzeFrameTitle}
-          >
-            <ScanEye size={18} />
-            {appCopy.analyzeFrame}
-          </button>
-          <button
-            onClick={interruptAssistantSpeech}
-            disabled={!isInterruptible}
-            title="停止当前播报并继续听你说话"
-          >
-            <CircleStop size={18} />
-            停止回复
-          </button>
-          <button
-            onClick={stopMedia}
-            disabled={!stream}
-            title={appCopy.endSessionTitle}
-          >
-            <CircleStop size={18} />
-            {appCopy.endSession}
-          </button>
-        </div>
+        <Card className="control-card">
+          <CardContent className="controlbar">
+            <label className="device-select">
+              <span>{appCopy.cameraDeviceLabel}</span>
+              <Select
+                value={selectedCameraDeviceId}
+                onValueChange={(value) => {
+                  void switchCamera(value);
+                }}
+              >
+                <SelectTrigger disabled={cameraDevices.length === 0}>
+                  <SelectValue placeholder={appCopy.cameraDevicePlaceholder} />
+                </SelectTrigger>
+                <SelectContent>
+                  {cameraDevices.map((device, index) => (
+                    <SelectItem key={device.deviceId} value={device.deviceId}>
+                      {device.label || `${appCopy.unknownCamera} ${index + 1}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </label>
+
+            <Button onClick={startMedia} disabled={cameraEnabled} title={appCopy.connectTitle}>
+              <PhoneCall size={18} />
+              {appCopy.connect}
+            </Button>
+            <Button variant="secondary" onClick={toggleMic} disabled={!stream || stream.getAudioTracks().length === 0} title={appCopy.toggleMicTitle}>
+              {micEnabled ? <Mic size={18} /> : <MicOff size={18} />}
+              {appCopy.toggleMic}
+            </Button>
+            <Button variant="secondary" onClick={toggleCamera} disabled={!stream} title={appCopy.toggleCameraTitle}>
+              {cameraEnabled ? <Video size={18} /> : <VideoOff size={18} />}
+              {appCopy.toggleCamera}
+            </Button>
+            <div className="switch-control">
+              {autoObserveEnabled ? <Eye size={17} /> : <EyeOff size={17} />}
+              <span>{appCopy.autoObserve}</span>
+              <Switch
+                checked={autoObserveEnabled}
+                disabled={!stream}
+                title={appCopy.autoObserveTitle}
+                onCheckedChange={() => setAutoObserveEnabled((value) => !value)}
+              />
+            </div>
+            <Button variant="outline" onClick={analyzeFrame} disabled={!cameraEnabled} title={appCopy.analyzeFrameTitle}>
+              <ScanEye size={18} />
+              {appCopy.analyzeFrame}
+            </Button>
+            <Button variant="outline" onClick={interruptAssistantSpeech} disabled={!isInterruptible} title={appCopy.interruptSpeechTitle}>
+              <CircleStop size={18} />
+              {appCopy.interruptSpeech}
+            </Button>
+            <Button variant="destructive" onClick={stopMedia} disabled={!stream} title={appCopy.endSessionTitle}>
+              <CircleStop size={18} />
+              {appCopy.endSession}
+            </Button>
+          </CardContent>
+        </Card>
       </section>
 
-      <aside
-        className={`inspector ${prioritizeActionPanel ? "prioritize-action" : ""}`}
-      >
-        <section className="scene-panel">
-          <p className="eyebrow">Scene Mode</p>
-          <h3>{sceneModeProfile.label}</h3>
-          <p className="summary">{sceneModeProfile.description}</p>
-          <div className="scene-tags">
-            {sceneModeProfile.focus.map((item) => (
-              <span key={item}>{item}</span>
-            ))}
-          </div>
-          <ul className="scene-examples">
-            {sceneModeProfile.examples.map((example) => (
-              <li key={example}>{example}</li>
-            ))}
-          </ul>
-        </section>
-        <section>
-          <p className="eyebrow">{appCopy.visionSummaryLabel}</p>
-          <h3>{appCopy.currentViewTitle}</h3>
-          <p className="summary">
-            {visionSummary?.summary ?? appCopy.emptySummary}
-          </p>
-          <small>
-            {visionSummary
-              ? `${appCopy.updatedAt} ${new Date(visionSummary.createdAt).toLocaleTimeString()}`
-              : appCopy.waitingFirstFrame}
-          </small>
-          <div className={`sync-status ${visionContextSyncState}`}>
-            {appCopy.visionContextSyncLabels[visionContextSyncState]}
-            {visionContextSyncedAt
-              ? ` · ${new Date(visionContextSyncedAt).toLocaleTimeString()}`
-              : ""}
-          </div>
-        </section>
-
-        <section>
-          <p className="eyebrow">{appCopy.actionTimelineLabel}</p>
-          <h3>{appCopy.recentActionTitle}</h3>
-          <p className="summary">
-            {lastActionTimeline?.summary ?? appCopy.emptyActionTimeline}
-          </p>
-          {lastActionTimeline?.steps.length ? (
-            <ul className="action-steps">
-              {lastActionTimeline.steps.map((step) => (
-                <li key={`${step.timeRange}-${step.description}`}>
-                  <span>{step.timeRange}</span>
-                  {step.description}
-                </li>
+      <aside className={`inspector ${prioritizeActionPanel ? "prioritize-action" : ""}`}>
+        <Card className="scene-panel">
+          <CardHeader>
+            <p className="eyebrow">Scene Mode</p>
+            <CardTitle>{sceneModeProfile.label}</CardTitle>
+            <CardDescription>{sceneModeProfile.description}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="scene-tags">
+              {sceneModeProfile.focus.map((item) => (
+                <Badge key={item} variant="success">{item}</Badge>
+              ))}
+            </div>
+            <ul className="scene-examples">
+              {sceneModeProfile.examples.map((example) => (
+                <li key={example}>{example}</li>
               ))}
             </ul>
-          ) : null}
-          {lastActionTimeline ? (
-            <small>
-              {appCopy.confidenceNoteLabel}:{" "}
-              {lastActionTimeline.confidenceNote}
-            </small>
-          ) : null}
-        </section>
+          </CardContent>
+        </Card>
 
-        <section className="metric-grid">
-          <div>
-            <span>{appCopy.metricVisionRequests}</span>
-            <strong>{metrics.visionRequests}</strong>
-          </div>
-          <div>
-            <span>{appCopy.metricLowDetail}</span>
-            <strong>{metrics.lowDetailRequests}</strong>
-          </div>
-          <div>
-            <span>{appCopy.metricHighDetail}</span>
-            <strong>{metrics.highDetailRequests}</strong>
-          </div>
-          <div>
-            <span>{appCopy.metricCostLevel}</span>
-            <strong>{costLevel}</strong>
-          </div>
-          <div>
-            <span>{appCopy.metricAutoVisionRequests}</span>
-            <strong>{autoVisionRequestCount}</strong>
-          </div>
-          <div>
-            <span>{appCopy.metricSkippedFrames}</span>
-            <strong>{skippedFrameCount}</strong>
-          </div>
-          <div>
-            <span>{appCopy.metricLastAutoVisionAt}</span>
-            <strong className="compact-metric">
-              {lastAutoVisionAt
-                ? new Date(lastAutoVisionAt).toLocaleTimeString()
-                : appCopy.noAutoVisionYet}
-            </strong>
-          </div>
-          <div>
-            <span>{appCopy.metricFrameFingerprint}</span>
-            <strong className="compact-metric">
-              {lastFrameFingerprint
-                ? appCopy.fingerprintReady
-                : appCopy.fingerprintPending}
-            </strong>
-          </div>
-          <div>
-            <span>{appCopy.metricActionSamples}</span>
-            <strong>{actionSampleCount}</strong>
-          </div>
-          <div>
-            <span>{appCopy.metricDedupedActionFrames}</span>
-            <strong>{dedupedActionFrameCount}</strong>
-          </div>
-          <div>
-            <span>{appCopy.metricActionSequenceRequests}</span>
-            <strong>{actionSequenceRequestCount}</strong>
-          </div>
-          <div>
-            <span>{appCopy.metricActionBuffer}</span>
-            <strong>{actionFrames.length}</strong>
-          </div>
-          <div>
-            <span>{appCopy.metricVideoStreamStatus}</span>
-            <strong className="compact-metric">{videoStreamStatusLabel}</strong>
-          </div>
-          <div>
-            <span>{appCopy.metricStreamedFrames}</span>
-            <strong>{streamedVideoFrameCount}</strong>
-          </div>
-          <div>
-            <span>{appCopy.metricStreamBuffer}</span>
-            <strong>{videoStreamBufferedFrames}</strong>
-          </div>
-          <div>
-            <span>{appCopy.metricStreamCloudAnalyses}</span>
-            <strong>{videoStreamCloudAnalyses}</strong>
-          </div>
-          <div>
-            <span>{appCopy.metricStreamTimelineAnalyses}</span>
-            <strong>{videoStreamTimelineAnalyses}</strong>
-          </div>
-          <div>
-            <span>{appCopy.metricStreamTimelineErrors}</span>
-            <strong>{videoStreamTimelineErrors}</strong>
-          </div>
-          <div>
-            <span>{appCopy.metricLastVideoStreamAt}</span>
-            <strong className="compact-metric">
-              {lastVideoStreamAt
-                ? new Date(lastVideoStreamAt).toLocaleTimeString()
-                : appCopy.noAutoVisionYet}
-            </strong>
-          </div>
-          <div>
-            <span>{appCopy.metricLastStreamError}</span>
-            <strong className="compact-metric">
-              {lastVideoStreamError ?? appCopy.noAutoVisionYet}
-            </strong>
-          </div>
-          <div>
-            <span>{appCopy.metricLastActionTimelineAt}</span>
-            <strong className="compact-metric">
-              {lastActionTimelineAt
-                ? new Date(lastActionTimelineAt).toLocaleTimeString()
-                : appCopy.noAutoVisionYet}
-            </strong>
-          </div>
-        </section>
+        {prioritizeActionPanel ? (
+          <>
+            <ActionTimelinePanel />
+            <VisionSummaryPanel />
+          </>
+        ) : (
+          <>
+            <VisionSummaryPanel />
+            <ActionTimelinePanel />
+          </>
+        )}
 
-        <section>
-          <p className="eyebrow">{appCopy.costStrategyLabel}</p>
-          <ul className="strategy-list">
-            {appCopy.strategies.map((strategy) => (
-              <li key={strategy}>{strategy}</li>
-            ))}
-          </ul>
-        </section>
+        <Card className="metrics-panel">
+          <CardHeader>
+            <p className="eyebrow">Runtime</p>
+            <CardTitle>成本与流状态</CardTitle>
+            <CardDescription>本地采样不等于云端调用，云端只处理去重后的关键帧。</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="metric-grid primary">
+              {primaryMetrics.map(([label, value]) => (
+                <div key={label}>
+                  <span>{label}</span>
+                  <strong>{value}</strong>
+                </div>
+              ))}
+            </div>
+            <Separator />
+            <div className="metric-list">
+              {streamMetrics.map(([label, value]) => (
+                <div key={label}>
+                  <span>{label}</span>
+                  <strong>{value}</strong>
+                </div>
+              ))}
+              <div>
+                <span>{appCopy.metricFrameFingerprint}</span>
+                <strong>{lastFrameFingerprint ? appCopy.fingerprintReady : appCopy.fingerprintPending}</strong>
+              </div>
+            </div>
+            <Separator />
+            <div className="metric-list compact">
+              {lastUpdatedItems.map(([label, value]) => (
+                <div key={label}>
+                  <span>{label}</span>
+                  <strong>{value}</strong>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <p className="eyebrow">{appCopy.costStrategyLabel}</p>
+            <CardTitle>端云协同策略</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="strategy-list">
+              {appCopy.strategies.map((strategy) => (
+                <li key={strategy}>{strategy}</li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
       </aside>
-    </main>
-  );
+    </main>  );
 };
+
