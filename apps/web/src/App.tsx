@@ -149,6 +149,8 @@ export const App = () => {
     ((reply: string | null) => void) | null
   >(null);
   const lastVideoStreamErrorAtRef = useRef(0);
+  const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const speechFallbackTimerRef = useRef<number | null>(null);
   const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(
     null,
   );
@@ -207,6 +209,7 @@ export const App = () => {
   const [messages, setMessages] = useState<TimelineMessage[]>([
     { role: "assistant", content: appCopy.initialAssistantMessage },
   ]);
+  const isInterruptible = phase === "speaking";
 
   useEffect(() => {
     phaseRef.current = phase;
@@ -384,6 +387,12 @@ export const App = () => {
   const appendAssistantMessage = (content: string) =>
     appendMessage({ role: "assistant", content });
 
+  const clearSpeechFallbackTimer = () => {
+    if (speechFallbackTimerRef.current === null) return;
+    window.clearTimeout(speechFallbackTimerRef.current);
+    speechFallbackTimerRef.current = null;
+  };
+
   const clearRecognitionRestartTimer = () => {
     if (recognitionRestartTimerRef.current === null) return;
     window.clearTimeout(recognitionRestartTimerRef.current);
@@ -413,6 +422,23 @@ export const App = () => {
 
     shouldKeepListeningRef.current = true;
     return startSpeechRecognition();
+  };
+
+  const finishAssistantSpeech = () => {
+    clearSpeechFallbackTimer();
+    currentUtteranceRef.current = null;
+    if (!mediaSessionActiveRef.current) return;
+    setPhase("listening");
+    resumeSpeechRecognition();
+  };
+
+  const interruptAssistantSpeech = () => {
+    if (phaseRef.current !== "speaking") return;
+    clearSpeechFallbackTimer();
+    currentUtteranceRef.current = null;
+    window.speechSynthesis?.cancel();
+    setPhase("listening");
+    resumeSpeechRecognition();
   };
 
   const waitForVideoFrame = async () => {
@@ -1236,27 +1262,28 @@ export const App = () => {
         window.speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(reply);
         utterance.lang = "zh-CN";
+        currentUtteranceRef.current = utterance;
         let speechFinished = false;
         const resumeAfterSpeech = () => {
           if (speechFinished) return;
           speechFinished = true;
-          setPhase("listening");
-          resumeSpeechRecognition();
+          if (currentUtteranceRef.current === utterance) {
+            finishAssistantSpeech();
+          }
         };
         const fallbackMs = Math.max(
           3500,
           Math.min(18000, reply.length * 220),
         );
-        const speechFallbackTimer = window.setTimeout(
+        clearSpeechFallbackTimer();
+        speechFallbackTimerRef.current = window.setTimeout(
           resumeAfterSpeech,
           fallbackMs,
         );
         utterance.onend = () => {
-          window.clearTimeout(speechFallbackTimer);
           resumeAfterSpeech();
         };
         utterance.onerror = () => {
-          window.clearTimeout(speechFallbackTimer);
           resumeAfterSpeech();
         };
         window.speechSynthesis.speak(utterance);
@@ -1452,6 +1479,8 @@ export const App = () => {
   const stopMedia = async () => {
     mediaSessionActiveRef.current = false;
     stopSpeechRecognition(false);
+    clearSpeechFallbackTimer();
+    currentUtteranceRef.current = null;
     window.speechSynthesis?.cancel();
     if (autoObserveTimerRef.current !== null) {
       window.clearTimeout(autoObserveTimerRef.current);
@@ -1731,6 +1760,14 @@ export const App = () => {
           >
             <ScanEye size={18} />
             {appCopy.analyzeFrame}
+          </button>
+          <button
+            onClick={interruptAssistantSpeech}
+            disabled={!isInterruptible}
+            title="停止当前播报并继续听你说话"
+          >
+            <CircleStop size={18} />
+            停止回复
           </button>
           <button
             onClick={stopMedia}

@@ -10,6 +10,7 @@ import type {
   VisionSequenceFrame,
   VisionSummary,
 } from "@ai-vision/shared";
+import type { ConversationHistoryService } from "../conversation/conversation-history.service.js";
 import type { OpenaiService } from "../openai/openai.service.js";
 
 type OmniConnectionState = {
@@ -317,6 +318,7 @@ const handleVideoFrame = (
 export const attachOmniWebSocketProxy = (
   server: Server,
   openaiService: OpenaiService,
+  historyService: ConversationHistoryService,
 ) => {
   server.on("upgrade", (request, socket) => {
     const netSocket = socket as Socket;
@@ -376,18 +378,33 @@ export const attachOmniWebSocketProxy = (
         }
 
         if (event.type === "text") {
+          const turnContext = {
+            visionTimeline: state.visionTimeline,
+            visionSummary: state.visionSummary,
+          };
           const requestBody: ConversationRequest = {
             sessionId: state.sessionId,
             text: event.text,
-            visionTimeline: state.visionTimeline,
-            visionSummary: state.visionSummary,
+            ...turnContext,
+            history: historyService.getHistory(state.sessionId),
           };
 
           void openaiService
             .createConversationReply(requestBody)
-            .then((reply) =>
-              sendJson(netSocket, { type: "text", text: reply, final: true }),
-            )
+            .then((reply) => {
+              historyService.recordUserTurn(
+                state.sessionId,
+                event.text,
+                turnContext,
+              );
+              historyService.recordAssistantTurn(state.sessionId, reply, {
+                ...turnContext,
+                imageReference:
+                  historyService.getHistory(state.sessionId).at(-1)?.context
+                    ?.imageReference ?? null,
+              });
+              sendJson(netSocket, { type: "text", text: reply, final: true });
+            })
             .catch((error: unknown) =>
               sendJson(netSocket, {
                 type: "error",
