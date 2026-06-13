@@ -209,7 +209,12 @@ export const App = () => {
       }
     };
     const markReady = () => {
-      setVideoReady(true);
+      const isReady =
+        videoElement.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+        videoElement.videoWidth > 0 &&
+        videoElement.videoHeight > 0;
+      videoReadyRef.current = isReady;
+      setVideoReady(isReady);
       updateCameraDiagnostics(stream, videoElement);
     };
     const frameTimer = window.setTimeout(() => {
@@ -226,6 +231,8 @@ export const App = () => {
     videoElement.muted = true;
     videoElement.playsInline = true;
     videoElement.addEventListener("loadedmetadata", playVideo);
+    videoElement.addEventListener("loadeddata", markReady);
+    videoElement.addEventListener("canplay", markReady);
     videoElement.addEventListener("playing", markReady);
     videoTrack?.addEventListener("mute", updateFromTrack);
     videoTrack?.addEventListener("unmute", updateFromTrack);
@@ -237,6 +244,8 @@ export const App = () => {
       cancelled = true;
       window.clearTimeout(frameTimer);
       videoElement.removeEventListener("loadedmetadata", playVideo);
+      videoElement.removeEventListener("loadeddata", markReady);
+      videoElement.removeEventListener("canplay", markReady);
       videoElement.removeEventListener("playing", markReady);
       videoTrack?.removeEventListener("mute", updateFromTrack);
       videoTrack?.removeEventListener("unmute", updateFromTrack);
@@ -287,10 +296,45 @@ export const App = () => {
     return startSpeechRecognition();
   };
 
-  const captureCurrentFrame = () => {
+  const waitForVideoFrame = async () => {
+    const video = videoRef.current;
+    if (
+      !video ||
+      video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA ||
+      !streamRef.current
+    ) {
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      const timeoutId = window.setTimeout(resolve, 1800);
+      const cleanup = () => {
+        window.clearTimeout(timeoutId);
+        video.removeEventListener("loadeddata", cleanup);
+        video.removeEventListener("canplay", cleanup);
+        video.removeEventListener("playing", cleanup);
+        resolve();
+      };
+
+      video.addEventListener("loadeddata", cleanup, { once: true });
+      video.addEventListener("canplay", cleanup, { once: true });
+      video.addEventListener("playing", cleanup, { once: true });
+    });
+  };
+
+  const captureCurrentFrame = async () => {
+    await waitForVideoFrame();
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas || !videoReadyRef.current || video.readyState < 2) {
+    if (
+      !video ||
+      !canvas ||
+      video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+      !video.videoWidth ||
+      !video.videoHeight
+    ) {
+      videoReadyRef.current = false;
+      setVideoReady(false);
       return null;
     }
 
@@ -306,7 +350,7 @@ export const App = () => {
   };
 
   const analyzeCurrentFrame = async (reason: "manual" | "visual-question") => {
-    const imageBase64 = captureCurrentFrame();
+    const imageBase64 = await captureCurrentFrame();
     if (!imageBase64) {
       appendSystemMessage(appCopy.cameraNotReadyMessage);
       return null;
