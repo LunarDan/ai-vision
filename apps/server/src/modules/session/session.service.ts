@@ -1,9 +1,14 @@
 import { Injectable } from "@nestjs/common";
 import type { EndSessionRequest, SessionMetrics } from "@ai-vision/shared";
+import { ConversationHistoryService } from "../conversation/conversation-history.service.js";
 
 @Injectable()
 export class SessionService {
+  constructor(private readonly historyService: ConversationHistoryService) {}
+
   async end(request: EndSessionRequest): Promise<SessionMetrics> {
+    this.historyService.clearSession(request.sessionId);
+
     return {
       ...request.metrics,
       sessionId: request.sessionId,

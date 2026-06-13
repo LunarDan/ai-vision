@@ -1,18 +1,42 @@
 import { Injectable } from "@nestjs/common";
 import type {
+  ConversationHistoryItem,
   ConversationRequest,
   VisionActionStep,
   VisionSequenceFrame,
 } from "@ai-vision/shared";
 import OpenAI from "openai";
 
-const openaiBaseUrl = process.env.OPENAI_BASE_URL ?? "https://dashscope.aliyuncs.com/compatible-mode/v1";
-const createOpenaiUrl = (path: string) => `${openaiBaseUrl.replace(/\/$/, "")}${path}`;
+const openaiBaseUrl =
+  process.env.OPENAI_BASE_URL ?? "https://dashscope.aliyuncs.com/compatible-mode/v1";
+const createOpenaiUrl = (path: string) =>
+  `${openaiBaseUrl.replace(/\/$/, "")}${path}`;
 
 type ImageSequenceAnalysis = {
   summary: string;
   steps: VisionActionStep[];
   confidenceNote: string;
+};
+
+const formatHistoryItem = (item: ConversationHistoryItem) => {
+  const context = item.context;
+  const visualSummary = context?.visionSummary?.summary
+    ? `\n当时画面摘要：${context.visionSummary.summary}`
+    : "";
+  const actionSummary = context?.visionTimeline?.summary
+    ? `\n当时动作时间线：${context.visionTimeline.summary}`
+    : "";
+  const imageReference = context?.imageReference
+    ? `\n当时关联图片引用：${JSON.stringify(context.imageReference)}`
+    : "";
+
+  return [
+    `${item.role === "user" ? "用户" : "AI"}（${item.createdAt}）：`,
+    item.content,
+    visualSummary,
+    actionSummary,
+    imageReference,
+  ].join("");
 };
 
 @Injectable()
@@ -23,7 +47,9 @@ export class OpenaiService {
   });
 
   async createRealtimeSession(): Promise<never> {
-    throw new Error("OpenAI Realtime WebRTC is disabled. Use the Omni WebSocket proxy instead.");
+    throw new Error(
+      "OpenAI Realtime WebRTC is disabled. Use the Omni WebSocket proxy instead.",
+    );
   }
 
   async analyzeImage(imageBase64: string, detail: "low" | "high") {
@@ -128,6 +154,13 @@ export class OpenaiService {
 
   async createConversationReply(request: ConversationRequest) {
     const model = process.env.OPENAI_VISION_MODEL ?? "qwen3.5-omni-plus";
+    const historyContext =
+      request.history && request.history.length > 0
+        ? [
+            "最近对话历史如下。用户追问“刚才那张图”“它”“继续说”等内容时，请结合这些历史；如果历史和当前视觉上下文冲突，以当前视觉上下文为准。",
+            ...request.history.slice(-20).map(formatHistoryItem),
+          ].join("\n\n")
+        : "当前会话没有可用的历史对话。";
     const visualContext = request.visionSummary
       ? [
           "最近一次摄像头画面摘要：",
@@ -153,11 +186,11 @@ export class OpenaiService {
         {
           role: "system",
           content:
-            "你是一个通义千问视觉语音助手。回答要自然、简短、中文优先。用户问当前画面时，参考最近摄像头关键帧摘要；用户问刚才发生了什么、做了什么动作、手势或连续变化时，优先参考最近几秒多帧动作时间线。如果摘要或时间线可能漏帧、过期、信息不足或无法确定，要明确说明不确定，不要假装正在连续观看完整实时视频。",
+            "你是一个通义千问视觉语音助手。回答要自然、简短、中文优先。用户问当前画面时，参考最近摄像头关键帧摘要；用户问刚才发生了什么、做了什么动作、手势或连续变化时，优先参考最近几秒多帧动作时间线。用户追问前文时，参考最近对话历史。如果摘要、时间线或历史可能漏帧、过期、信息不足或无法确定，要明确说明不确定，不要假装正在连续观看完整实时视频。",
         },
         {
           role: "user",
-          content: `${visualContext}\n\n${actionContext}\n\n用户语音文本：${request.text}`,
+          content: `${historyContext}\n\n${visualContext}\n\n${actionContext}\n\n用户语音文本：${request.text}`,
         },
       ],
     });

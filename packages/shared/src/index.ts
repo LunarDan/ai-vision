@@ -44,6 +44,28 @@ export interface VisionActionTimeline {
   createdAt: string;
 }
 
+export interface ConversationImageReference {
+  objectKey?: string;
+  bucket?: string;
+  contentType?: string;
+  sha256?: string;
+}
+
+export interface ConversationTurnContext {
+  visionSummary?: VisionSummary | null;
+  visionTimeline?: VisionActionTimeline | null;
+  imageReference?: ConversationImageReference | null;
+}
+
+export interface ConversationHistoryItem {
+  id: string;
+  sessionId: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+  context?: ConversationTurnContext | null;
+}
+
 export interface VideoStreamFrame {
   id: string;
   imageBase64: string;
@@ -169,6 +191,7 @@ export interface ConversationRequest {
   text: string;
   visionSummary?: VisionSummary | null;
   visionTimeline?: VisionActionTimeline | null;
+  history?: ConversationHistoryItem[];
 }
 
 export interface ConversationResponse {
