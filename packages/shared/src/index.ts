@@ -18,6 +18,32 @@ export interface VisionSummary {
   createdAt: string;
 }
 
+export interface VisionSequenceFrame {
+  id: string;
+  imageBase64: string;
+  capturedAt: string;
+  offsetMs: number;
+}
+
+export interface VisionActionStep {
+  timeRange: string;
+  description: string;
+}
+
+export interface VisionActionTimeline {
+  id: string;
+  sessionId: string;
+  summary: string;
+  steps: VisionActionStep[];
+  confidenceNote: string;
+  frameCount: number;
+  dedupedFrameCount: number;
+  startedAt: string;
+  endedAt: string;
+  latencyMs: number;
+  createdAt: string;
+}
+
 export interface SessionMetrics {
   sessionId: string;
   audioSeconds: number;
@@ -92,6 +118,17 @@ export interface AnalyzeVisionResponse {
   snapshot: VisionSummary;
 }
 
+export interface AnalyzeVisionSequenceRequest {
+  sessionId: string;
+  frames: VisionSequenceFrame[];
+  sampledFrameCount: number;
+  dedupedFrameCount: number;
+}
+
+export interface AnalyzeVisionSequenceResponse {
+  timeline: VisionActionTimeline;
+}
+
 export interface EndSessionRequest {
   sessionId: string;
   metrics: SessionMetrics;
@@ -101,6 +138,7 @@ export interface ConversationRequest {
   sessionId: string;
   text: string;
   visionSummary?: VisionSummary | null;
+  visionTimeline?: VisionActionTimeline | null;
 }
 
 export interface ConversationResponse {

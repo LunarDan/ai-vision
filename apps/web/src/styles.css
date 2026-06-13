@@ -388,11 +388,42 @@ video {
   margin-top: 6px;
 }
 
+.metric-grid .compact-metric {
+  font-size: 15px;
+  line-height: 1.35;
+}
+
 .strategy-list {
   color: #d8e5ef;
   line-height: 1.9;
   margin: 0;
   padding-left: 18px;
+}
+
+.action-steps {
+  color: #d8e5ef;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  line-height: 1.5;
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+}
+
+.action-steps li {
+  background: #101923;
+  border: 1px solid #293848;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.action-steps span {
+  color: #84d6c4;
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 4px;
 }
 
 @media (max-width: 1100px) {
