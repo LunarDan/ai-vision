@@ -436,6 +436,7 @@ export const attachOmniWebSocketProxy = (
               sessionId: state.sessionId,
               text: event.text,
               sceneMode: event.sceneMode,
+              customSceneMode: event.customSceneMode,
               ...turnContext,
               history: historyService.getHistory(state.sessionId),
             };

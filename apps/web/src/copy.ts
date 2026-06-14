@@ -1,4 +1,4 @@
-import type { AssistantPhase, SceneMode } from "@ai-vision/shared";
+import type { AssistantPhase, BuiltInSceneMode } from "@ai-vision/shared";
 
 export type SceneModeProfile = {
   label: string;
@@ -8,7 +8,7 @@ export type SceneModeProfile = {
   nextSteps: string[];
 };
 
-export const sceneModeCopy: Record<SceneMode, SceneModeProfile> = {
+export const sceneModeCopy: Record<BuiltInSceneMode, SceneModeProfile> = {
   general: {
     label: "通用视觉对话",
     description: "适合自由询问当前画面、最近变化和连续追问。",
@@ -169,6 +169,28 @@ export const appCopy = {
     failed: "等待下一次提问",
   },
   assistantPanelLabel: "Scene Assistant",
+  customModeLabel: "自定义",
+  customModeEmptyTitle: "创建你的专属场景",
+  customModeEmptyDescription:
+    "填写一个角色卡，让 AI 按你的场景目标理解画面和回答问题。",
+  customModeEditTitle: "自定义模式",
+  customModeLimitHint: "最多保存 5 个自定义模式，保存在当前浏览器。",
+  customModeSaved: "自定义模式已保存。",
+  customModeDeleted: "自定义模式已删除。",
+  customModeCreate: "新建模式",
+  customModeSave: "保存模式",
+  customModeDelete: "删除模式",
+  customModeSelect: "选择模式",
+  customModeName: "模式名称",
+  customModeDescription: "适用场景",
+  customModeRole: "角色身份",
+  customModeMission: "核心任务",
+  customModeStyle: "回答风格",
+  customModeFocus: "关注重点",
+  customModeExamples: "推荐问题",
+  customModeNextSteps: "演示建议",
+  customModeGuardrail: "边界要求",
+  customModeListHint: "每行一条，最多 5 条。",
   demoQuestionsTitle: "推荐提问",
   nextStepsTitle: "演示建议",
   observationTitle: "当前观察",
@@ -218,6 +240,7 @@ export const appCopy = {
     "每分钟限制自动视觉请求次数",
     "页面不可见、AI 播报或后端离线时暂停观察",
     "重新说一遍只重播本地 TTS，不重新调用模型",
+    "自定义场景只改变同一次对话 prompt，不增加额外调用",
   ],
   costLevels: {
     low: "低",

@@ -25,8 +25,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import type {
   AssistantPhase,
+  BuiltInSceneMode,
   ConversationResponse,
   ConversationStreamEvent,
+  CustomSceneModeProfile,
   OmniServerEvent,
   SceneMode,
   SessionMetrics,
@@ -68,6 +70,9 @@ const minActionFramesForSequence = 2;
 const actionFrameWidth = 384;
 const actionFrameQuality = 0.5;
 const actionQuestionBurstFrames = 6;
+const customSceneModesStorageKey = "ai-vision.customSceneModes.v1";
+const selectedCustomSceneModeStorageKey = "ai-vision.selectedCustomSceneMode.v1";
+const maxCustomSceneModes = 5;
 
 type TimelineMessage = {
   id: string;
@@ -84,8 +89,63 @@ type AssistantReplyPayload = {
 };
 
 const sceneModeOptions = Object.entries(sceneModeCopy) as Array<
-  [SceneMode, (typeof sceneModeCopy)[SceneMode]]
+  [BuiltInSceneMode, (typeof sceneModeCopy)[BuiltInSceneMode]]
 >;
+
+type CustomSceneModeDraft = Omit<CustomSceneModeProfile, "id"> & {
+  id?: string;
+};
+
+const createEmptyCustomModeDraft = (): CustomSceneModeDraft => ({
+  label: "",
+  description: "",
+  role: "",
+  mission: "",
+  style: "",
+  focus: [],
+  examples: [],
+  nextSteps: [],
+  guardrail: "",
+});
+
+const trimText = (value: string, maxLength: number) =>
+  value.trim().slice(0, maxLength);
+
+const normalizeList = (items: string[]) =>
+  items
+    .flatMap((item) => item.split("\n"))
+    .map((item) => trimText(item, 40))
+    .filter(Boolean)
+    .slice(0, 5);
+
+const sanitizeCustomSceneMode = (
+  draft: CustomSceneModeDraft,
+): CustomSceneModeProfile => ({
+  id: draft.id || crypto.randomUUID(),
+  label: trimText(draft.label, 20) || "自定义模式",
+  description: trimText(draft.description, 120) || "用户自定义场景",
+  role: trimText(draft.role, 120) || "你是用户自定义的视觉对话助手。",
+  mission: trimText(draft.mission, 120) || "根据用户指定的场景目标理解画面并回答问题。",
+  style: trimText(draft.style, 120) || "回答自然、简短、具体。",
+  focus: normalizeList(draft.focus),
+  examples: normalizeList(draft.examples),
+  nextSteps: normalizeList(draft.nextSteps),
+  guardrail: trimText(draft.guardrail, 120) || "不确定时要说明限制，不要编造看不清的内容。",
+});
+
+const parseStoredCustomSceneModes = () => {
+  try {
+    const raw = window.localStorage.getItem(customSceneModesStorageKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as CustomSceneModeProfile[];
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => sanitizeCustomSceneMode(item))
+      .slice(0, maxCustomSceneModes);
+  } catch {
+    return [];
+  }
+};
 
 type CameraDiagnostics = {
   label: string;
@@ -196,6 +256,15 @@ export const App = () => {
   const [phase, setPhase] = useState<AssistantPhase>("idle");
   const [sessionId] = useState(() => crypto.randomUUID());
   const [sceneMode, setSceneMode] = useState<SceneMode>("general");
+  const [customSceneModes, setCustomSceneModes] = useState<
+    CustomSceneModeProfile[]
+  >(() => parseStoredCustomSceneModes());
+  const [selectedCustomSceneModeId, setSelectedCustomSceneModeId] = useState(
+    () =>
+      window.localStorage.getItem(selectedCustomSceneModeStorageKey) ?? "",
+  );
+  const [customSceneDraft, setCustomSceneDraft] =
+    useState<CustomSceneModeDraft>(() => createEmptyCustomModeDraft());
   const [metrics, setMetrics] = useState(() => createInitialMetrics(sessionId));
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [micEnabled, setMicEnabled] = useState(true);
@@ -322,6 +391,41 @@ export const App = () => {
   useEffect(() => {
     visionSummaryRef.current = visionSummary;
   }, [visionSummary]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      customSceneModesStorageKey,
+      JSON.stringify(customSceneModes.slice(0, maxCustomSceneModes)),
+    );
+    const selectedExists = customSceneModes.some(
+      (mode) => mode.id === selectedCustomSceneModeId,
+    );
+    if (!selectedExists && customSceneModes[0]) {
+      setSelectedCustomSceneModeId(customSceneModes[0].id);
+    }
+    if (!selectedExists && customSceneModes.length === 0) {
+      setSelectedCustomSceneModeId("");
+      if (sceneMode === "custom") {
+        setCustomSceneDraft(createEmptyCustomModeDraft());
+      }
+    }
+  }, [customSceneModes, sceneMode, selectedCustomSceneModeId]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      selectedCustomSceneModeStorageKey,
+      selectedCustomSceneModeId,
+    );
+  }, [selectedCustomSceneModeId]);
+
+  useEffect(() => {
+    const selected = customSceneModes.find(
+      (mode) => mode.id === selectedCustomSceneModeId,
+    );
+    if (selected) {
+      setCustomSceneDraft(selected);
+    }
+  }, [customSceneModes, selectedCustomSceneModeId]);
 
   useEffect(() => {
     const timeline = timelineRef.current;
@@ -574,6 +678,60 @@ export const App = () => {
   const focusFollowUpInput = () => {
     setTypedQuestionPlaceholderOverride(appCopy.followUpPlaceholder);
     typedQuestionInputRef.current?.focus();
+  };
+
+  const selectedCustomSceneMode =
+    customSceneModes.find((mode) => mode.id === selectedCustomSceneModeId) ??
+    customSceneModes[0] ??
+    null;
+
+  const currentCustomSceneMode =
+    sceneMode === "custom" ? selectedCustomSceneMode : null;
+
+  const updateCustomDraft = (
+    field: keyof CustomSceneModeDraft,
+    value: string | string[],
+  ) => {
+    setCustomSceneDraft((current) => ({ ...current, [field]: value }));
+  };
+
+  const updateCustomDraftList = (
+    field: "focus" | "examples" | "nextSteps",
+    value: string,
+  ) => {
+    updateCustomDraft(field, value.split("\n"));
+  };
+
+  const editCustomSceneMode = (mode: CustomSceneModeProfile) => {
+    setSelectedCustomSceneModeId(mode.id);
+    setCustomSceneDraft(mode);
+  };
+
+  const createCustomSceneMode = () => {
+    setCustomSceneDraft(createEmptyCustomModeDraft());
+    setSceneMode("custom");
+  };
+
+  const saveCustomSceneMode = () => {
+    const sanitized = sanitizeCustomSceneMode(customSceneDraft);
+    setCustomSceneModes((current) => {
+      const withoutCurrent = current.filter((mode) => mode.id !== sanitized.id);
+      return [sanitized, ...withoutCurrent].slice(0, maxCustomSceneModes);
+    });
+    setSelectedCustomSceneModeId(sanitized.id);
+    setCustomSceneDraft(sanitized);
+    setSceneMode("custom");
+    appendSystemMessage(appCopy.customModeSaved);
+  };
+
+  const deleteCustomSceneMode = () => {
+    if (!customSceneDraft.id) return;
+    setCustomSceneModes((current) =>
+      current.filter((mode) => mode.id !== customSceneDraft.id),
+    );
+    setCustomSceneDraft(createEmptyCustomModeDraft());
+    setSceneMode("general");
+    appendSystemMessage(appCopy.customModeDeleted);
   };
 
   const waitForVideoFrame = async () => {
@@ -892,10 +1050,17 @@ export const App = () => {
     const socket = videoStreamSocketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return null;
 
-    return new Promise<AssistantReplyPayload | null>((resolve) => {
-      videoStreamReplyResolverRef.current?.(null);
-      videoStreamReplyResolverRef.current = resolve;
-      socket.send(JSON.stringify({ type: "text", text, sceneMode }));
+      return new Promise<AssistantReplyPayload | null>((resolve) => {
+        videoStreamReplyResolverRef.current?.(null);
+        videoStreamReplyResolverRef.current = resolve;
+        socket.send(
+          JSON.stringify({
+            type: "text",
+            text,
+            sceneMode,
+            customSceneMode: currentCustomSceneMode,
+          }),
+        );
       window.setTimeout(() => {
         if (videoStreamReplyResolverRef.current === resolve) {
           videoStreamReplyResolverRef.current = null;
@@ -1392,6 +1557,7 @@ export const App = () => {
         sessionId,
         text,
         sceneMode,
+        customSceneMode: currentCustomSceneMode,
         visionSummary: currentVisionSummary,
         visionTimeline: currentActionTimeline,
       }),
@@ -1464,6 +1630,7 @@ export const App = () => {
         sessionId,
         text,
         sceneMode,
+        customSceneMode: currentCustomSceneMode,
         visionSummary: currentVisionSummary,
         visionTimeline: currentActionTimeline,
       }),
@@ -1916,7 +2083,17 @@ export const App = () => {
     }
   };
 
-  const sceneModeProfile = sceneModeCopy[sceneMode];
+  const fallbackCustomSceneProfile = {
+    label: appCopy.customModeLabel,
+    description: appCopy.customModeEmptyDescription,
+    focus: ["自定义角色", "场景目标", "专属提问"],
+    examples: [],
+    nextSteps: [appCopy.customModeEmptyDescription],
+  };
+  const sceneModeProfile =
+    sceneMode === "custom"
+      ? (selectedCustomSceneMode ?? fallbackCustomSceneProfile)
+      : sceneModeCopy[sceneMode];
   const prioritizeActionPanel =
     sceneMode === "action" || sceneMode === "interview";
   const isBackendOffline = backendStatus === "offline";
@@ -2225,6 +2402,9 @@ export const App = () => {
                 {profile.label}
               </TabsTrigger>
             ))}
+            <TabsTrigger value="custom">
+              {appCopy.customModeLabel}
+            </TabsTrigger>
           </TabsList>
         </Tabs>
 
@@ -2352,6 +2532,144 @@ export const App = () => {
                 <li key={step}>{step}</li>
               ))}
             </ul>
+            {sceneMode === "custom" ? (
+              <>
+                <Separator />
+                <div className="custom-mode-tools">
+                  <div className="custom-mode-header">
+                    <p className="panel-section-title">{appCopy.customModeEditTitle}</p>
+                    <Button
+                      onClick={createCustomSceneMode}
+                      type="button"
+                      variant="ghost"
+                    >
+                      {appCopy.customModeCreate}
+                    </Button>
+                  </div>
+                  {customSceneModes.length ? (
+                    <div className="custom-mode-list" aria-label={appCopy.customModeSelect}>
+                      {customSceneModes.map((mode) => (
+                        <Button
+                          key={mode.id}
+                          onClick={() => editCustomSceneMode(mode)}
+                          type="button"
+                          variant={mode.id === selectedCustomSceneModeId ? "default" : "outline"}
+                        >
+                          {mode.label}
+                        </Button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="custom-mode-empty">
+                      {appCopy.customModeEmptyTitle}：{appCopy.customModeEmptyDescription}
+                    </p>
+                  )}
+                  <p className="custom-mode-hint">{appCopy.customModeLimitHint}</p>
+                  <label>
+                    <span>{appCopy.customModeName}</span>
+                    <input
+                      className="custom-mode-input"
+                      maxLength={20}
+                      onChange={(event) => updateCustomDraft("label", event.target.value)}
+                      value={customSceneDraft.label}
+                    />
+                  </label>
+                  <label>
+                    <span>{appCopy.customModeDescription}</span>
+                    <textarea
+                      className="custom-mode-textarea"
+                      maxLength={120}
+                      onChange={(event) => updateCustomDraft("description", event.target.value)}
+                      rows={2}
+                      value={customSceneDraft.description}
+                    />
+                  </label>
+                  <label>
+                    <span>{appCopy.customModeRole}</span>
+                    <textarea
+                      className="custom-mode-textarea"
+                      maxLength={120}
+                      onChange={(event) => updateCustomDraft("role", event.target.value)}
+                      rows={2}
+                      value={customSceneDraft.role}
+                    />
+                  </label>
+                  <label>
+                    <span>{appCopy.customModeMission}</span>
+                    <textarea
+                      className="custom-mode-textarea"
+                      maxLength={120}
+                      onChange={(event) => updateCustomDraft("mission", event.target.value)}
+                      rows={2}
+                      value={customSceneDraft.mission}
+                    />
+                  </label>
+                  <label>
+                    <span>{appCopy.customModeStyle}</span>
+                    <textarea
+                      className="custom-mode-textarea"
+                      maxLength={120}
+                      onChange={(event) => updateCustomDraft("style", event.target.value)}
+                      rows={2}
+                      value={customSceneDraft.style}
+                    />
+                  </label>
+                  <label>
+                    <span>{appCopy.customModeFocus}</span>
+                    <textarea
+                      className="custom-mode-textarea"
+                      onChange={(event) => updateCustomDraftList("focus", event.target.value)}
+                      placeholder={appCopy.customModeListHint}
+                      rows={3}
+                      value={customSceneDraft.focus.join("\n")}
+                    />
+                  </label>
+                  <label>
+                    <span>{appCopy.customModeExamples}</span>
+                    <textarea
+                      className="custom-mode-textarea"
+                      onChange={(event) => updateCustomDraftList("examples", event.target.value)}
+                      placeholder={appCopy.customModeListHint}
+                      rows={3}
+                      value={customSceneDraft.examples.join("\n")}
+                    />
+                  </label>
+                  <label>
+                    <span>{appCopy.customModeNextSteps}</span>
+                    <textarea
+                      className="custom-mode-textarea"
+                      onChange={(event) => updateCustomDraftList("nextSteps", event.target.value)}
+                      placeholder={appCopy.customModeListHint}
+                      rows={3}
+                      value={customSceneDraft.nextSteps.join("\n")}
+                    />
+                  </label>
+                  <label>
+                    <span>{appCopy.customModeGuardrail}</span>
+                    <textarea
+                      className="custom-mode-textarea"
+                      maxLength={120}
+                      onChange={(event) => updateCustomDraft("guardrail", event.target.value)}
+                      rows={2}
+                      value={customSceneDraft.guardrail}
+                    />
+                  </label>
+                  <div className="custom-mode-actions">
+                    <Button onClick={saveCustomSceneMode} type="button">
+                      {appCopy.customModeSave}
+                    </Button>
+                    <Button
+                      disabled={!customSceneDraft.id}
+                      onClick={deleteCustomSceneMode}
+                      type="button"
+                      variant="outline"
+                    >
+                      {appCopy.customModeDelete}
+                    </Button>
+                  </div>
+                </div>
+              </>
+            ) : null}
           </CardContent>
         </Card>
 

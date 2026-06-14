@@ -1,8 +1,9 @@
 import { Injectable } from "@nestjs/common";
 import type {
+  BuiltInSceneMode,
   ConversationHistoryItem,
   ConversationRequest,
-  SceneMode,
+  CustomSceneModeProfile,
   VisionActionStep,
   VisionSequenceFrame,
 } from "@ai-vision/shared";
@@ -32,7 +33,7 @@ type ConversationMessage = {
   content: string;
 };
 
-const sceneRolePrompts: Record<SceneMode, SceneRolePrompt> = {
+const sceneRolePrompts: Record<BuiltInSceneMode, SceneRolePrompt> = {
   general: {
     role: "你是通用视觉对话伙伴。",
     mission: "帮助用户自然理解当前画面、最近变化，并支持围绕前文继续追问。",
@@ -74,8 +75,46 @@ const sceneRolePrompts: Record<SceneMode, SceneRolePrompt> = {
   },
 };
 
-const formatSceneRolePrompt = (mode: SceneMode) => {
-  const prompt = sceneRolePrompts[mode];
+const trimPromptText = (value: string | undefined, maxLength: number) =>
+  (value ?? "").trim().slice(0, maxLength);
+
+const trimPromptList = (items: string[] | undefined) =>
+  (items ?? [])
+    .map((item) => trimPromptText(item, 40))
+    .filter(Boolean)
+    .slice(0, 5);
+
+const sanitizeCustomSceneMode = (
+  profile?: CustomSceneModeProfile | null,
+): SceneRolePrompt | null => {
+  if (!profile) return null;
+  const role = trimPromptText(profile.role || profile.label, 120);
+  const mission = trimPromptText(profile.mission || profile.description, 120);
+  const style = trimPromptText(profile.style, 120);
+  const focus = trimPromptList(profile.focus).join("、");
+  const guardrail = trimPromptText(profile.guardrail, 120);
+  if (!role || !mission) return null;
+
+  return {
+    role,
+    mission,
+    style: style || "回答自然、简短、具体。",
+    focus: focus || "当前画面、用户问题、最近变化。",
+    guardrail:
+      guardrail || "不确定时要说明限制，不要编造看不清的内容。",
+  };
+};
+
+const formatSceneRolePrompt = (request: ConversationRequest) => {
+  const customPrompt =
+    request.sceneMode === "custom"
+      ? sanitizeCustomSceneMode(request.customSceneMode)
+      : null;
+  const mode =
+    request.sceneMode && request.sceneMode !== "custom"
+      ? request.sceneMode
+      : "general";
+  const prompt = customPrompt ?? sceneRolePrompts[mode];
   return [
     `当前角色：${prompt.role}`,
     `核心任务：${prompt.mission}`,
@@ -222,8 +261,7 @@ export class OpenaiService {
   private createConversationMessages(
     request: ConversationRequest,
   ): ConversationMessage[] {
-    const sceneMode = request.sceneMode ?? "general";
-    const sceneContext = formatSceneRolePrompt(sceneMode);
+    const sceneContext = formatSceneRolePrompt(request);
     const historyContext =
       request.history && request.history.length > 0
         ? [

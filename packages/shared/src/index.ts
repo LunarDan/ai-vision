@@ -4,7 +4,27 @@ export type VisionDetail = "low" | "high";
 
 export type CostMode = "balanced" | "economy" | "detail";
 
-export type SceneMode = "general" | "action" | "study" | "interview" | "life";
+export type BuiltInSceneMode =
+  | "general"
+  | "action"
+  | "study"
+  | "interview"
+  | "life";
+
+export type SceneMode = BuiltInSceneMode | "custom";
+
+export interface CustomSceneModeProfile {
+  id: string;
+  label: string;
+  description: string;
+  role: string;
+  mission: string;
+  style: string;
+  focus: string[];
+  examples: string[];
+  nextSteps: string[];
+  guardrail: string;
+}
 
 export interface VisionSummary {
   id: string;
@@ -122,6 +142,7 @@ export type OmniClientEvent =
       type: "text";
       text: string;
       sceneMode?: SceneMode;
+      customSceneMode?: CustomSceneModeProfile | null;
     }
   | {
       type: "stop";
@@ -209,6 +230,7 @@ export interface ConversationRequest {
   sessionId: string;
   text: string;
   sceneMode?: SceneMode;
+  customSceneMode?: CustomSceneModeProfile | null;
   visionSummary?: VisionSummary | null;
   visionTimeline?: VisionActionTimeline | null;
   history?: ConversationHistoryItem[];
