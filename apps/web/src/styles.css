@@ -46,6 +46,7 @@ body {
 
 button,
 select,
+input,
 textarea {
   font: inherit;
 }
@@ -472,7 +473,7 @@ h2 {
   border-radius: 8px;
   display: grid;
   gap: 6px;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   padding: 6px;
 }
 
@@ -781,6 +782,72 @@ video {
   line-height: 1.75;
   margin: 0;
   padding-left: 18px;
+}
+
+.custom-mode-tools {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.custom-mode-header,
+.custom-mode-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.custom-mode-header .panel-section-title {
+  margin: 0;
+}
+
+.custom-mode-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.custom-mode-list .ui-button {
+  min-height: 34px;
+}
+
+.custom-mode-empty,
+.custom-mode-hint {
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.custom-mode-tools label {
+  color: #cbd5e1;
+  display: grid;
+  font-size: 12px;
+  font-weight: 800;
+  gap: 6px;
+}
+
+.custom-mode-input,
+.custom-mode-textarea {
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  color: #f8fafc;
+  line-height: 1.45;
+  outline: 0;
+  padding: 9px 10px;
+  width: 100%;
+}
+
+.custom-mode-textarea {
+  max-height: 120px;
+  resize: vertical;
+}
+
+.custom-mode-input:focus-visible,
+.custom-mode-textarea:focus-visible {
+  border-color: rgba(94, 234, 212, 0.56);
+  box-shadow: 0 0 0 2px rgba(94, 234, 212, 0.16);
 }
 
 .summary {
