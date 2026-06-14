@@ -206,6 +206,7 @@ type SpeechRecognitionLike = {
   interimResults: boolean;
   start: () => void;
   stop: () => void;
+  abort?: () => void;
   onresult:
     | ((event: {
         results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }>;
@@ -252,6 +253,7 @@ export const App = () => {
   const streamRef = useRef<MediaStream | null>(null);
   const phaseRef = useRef<AssistantPhase>("idle");
   const cameraEnabledRef = useRef(false);
+  const micEnabledRef = useRef(true);
   const videoReadyRef = useRef(false);
   const visionSummaryRef = useRef<VisionSummary | null>(null);
   const autoObserveEnabledRef = useRef(true);
@@ -432,6 +434,10 @@ export const App = () => {
   useEffect(() => {
     cameraEnabledRef.current = cameraEnabled;
   }, [cameraEnabled]);
+
+  useEffect(() => {
+    micEnabledRef.current = micEnabled;
+  }, [micEnabled]);
 
   useEffect(() => {
     videoReadyRef.current = videoReady;
@@ -663,13 +669,26 @@ export const App = () => {
     recognitionRestartTimerRef.current = null;
   };
 
-  const stopSpeechRecognition = (keepListening = false) => {
+  const isMicrophoneInputEnabled = () => {
+    const audioTracks = streamRef.current?.getAudioTracks() ?? [];
+    return (
+      micEnabledRef.current &&
+      audioTracks.length > 0 &&
+      audioTracks.some((track) => track.enabled && track.readyState === "live")
+    );
+  };
+
+  const stopSpeechRecognition = (keepListening = false, abort = false) => {
     shouldKeepListeningRef.current = keepListening;
     clearRecognitionRestartTimer();
     const recognition = recognitionRef.current;
     recognitionRef.current = null;
     try {
-      recognition?.stop();
+      if (abort && recognition?.abort) {
+        recognition.abort();
+      } else {
+        recognition?.stop();
+      }
     } catch {
       // Chrome can throw if recognition already stopped.
     }
@@ -679,7 +698,8 @@ export const App = () => {
     if (
       !mediaSessionActiveRef.current ||
       backendStatusRef.current !== "online" ||
-      !streamRef.current
+      !streamRef.current ||
+      !isMicrophoneInputEnabled()
     ) {
       return false;
     }
@@ -1910,6 +1930,7 @@ export const App = () => {
   };
 
   const startSpeechRecognition = () => {
+    if (!isMicrophoneInputEnabled()) return false;
     if (recognitionRef.current) return true;
 
     const SpeechRecognition = getSpeechRecognition();
@@ -1926,6 +1947,10 @@ export const App = () => {
       recognition.continuous = true;
       recognition.interimResults = false;
       recognition.onresult = (event) => {
+        if (!isMicrophoneInputEnabled()) {
+          stopSpeechRecognition(false, true);
+          return;
+        }
         const result = event.results[event.results.length - 1];
         if (!result?.isFinal) return;
         const text = result[0].transcript.trim();
@@ -2152,10 +2177,27 @@ export const App = () => {
   };
 
   const toggleMic = () => {
+    const nextMicEnabled = !micEnabledRef.current;
     stream?.getAudioTracks().forEach((track) => {
-      track.enabled = !micEnabled;
+      track.enabled = nextMicEnabled;
     });
-    setMicEnabled((value) => !value);
+    micEnabledRef.current = nextMicEnabled;
+    setMicEnabled(nextMicEnabled);
+
+    if (!nextMicEnabled) {
+      stopSpeechRecognition(false, true);
+      setLastHeardText("");
+      setVoiceStatusHint(appCopy.voiceHintIdle);
+      return;
+    }
+
+    if (
+      mediaSessionActiveRef.current &&
+      backendStatusRef.current === "online" &&
+      phaseRef.current === "listening"
+    ) {
+      resumeSpeechRecognition();
+    }
   };
 
   const toggleCamera = () => {
