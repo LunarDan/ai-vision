@@ -21,6 +21,7 @@
 | 用户可以让 AI 重新说一遍上一条回复。 | 是 | 已实现“重新说一遍”，只重播本地 TTS，不重新请求模型。 |
 | 用户可以快速继续追问。 | 是 | 已实现“继续追问”，聚焦文字输入框并给出追问占位提示。 |
 | 用户能清楚知道语音状态。 | 是 | 已实现明显的“正在听 / 已听到 / 正在思考 / 正在回复”状态条。 |
+| 用户结束对话后可以查看历史记录。 | 是 | 已实现结束会话归档，保存用户/AI 消息、核心指标和最后一帧图片引用，并提供历史列表与详情查看。 |
 | AI 回复可以边生成边显示。 | 是 | 已实现 HTTP fetch 流式文本显示，失败时回退普通 JSON 回复。 |
 | 用户可以切换不同场景，让 AI 担任不同角色。 | 是 | 已实现 5 个场景角色 prompt：通用视觉对话伙伴、动作观察员、桌面学习助教、演讲/面试教练、生活提醒助手。 |
 | 用户可以创建自己的场景角色。 | 是 | 已实现浏览器本地保存的自定义场景模式，用户可填写角色卡并用于后续语音或文字提问。 |
@@ -61,7 +62,7 @@
 ## 5. 当前架构
 
 - `apps/web`：React + Vite 前端，负责摄像头预览、本地抽帧、帧指纹去重、WebSocket 关键帧推送、语音识别、TTS、文字提问、场景模式和 UI 展示。
-- `apps/server`：NestJS 后端，负责 DashScope 多模态调用、会话回复、关键帧对象存储、session 历史记忆、场景角色 prompt 和 `/api/omni/realtime` WebSocket 视觉记忆代理。
+- `apps/server`：NestJS 后端，负责 DashScope 多模态调用、会话回复、关键帧对象存储、session 历史记忆、结束会话归档、场景角色 prompt 和 `/api/omni/realtime` WebSocket 视觉记忆代理。
 - `packages/shared`：前后端共享类型，包含视觉观察、动作变化、视频流帧、场景模式、Omni WebSocket 事件和对话请求契约。
 
 核心流程：
@@ -74,6 +75,7 @@
 6. 用户语音或文字提问时，前端携带当前场景；WebSocket 可用时通过 `text` 事件提问，否则回退 HTTP。
 7. 后端结合场景角色、视觉记忆、动作变化和历史对话生成自然回复，并通过 HTTP streaming 返回增量文本。
 8. 前端流式展示回复，完整生成后用 TTS 播报，用户可停止、重播或继续追问。
+9. 用户点击结束会话时，前端先抓取最后一帧，后端把对话、指标和最后一帧 MinIO 引用持久化，之后清理内存上下文。
 
 ## 6. 成本控制策略
 
@@ -93,6 +95,7 @@
 | 自定义场景限制 prompt 长度。 | 是 | 已采用，前端限制字段长度，后端再次裁剪自定义角色卡。 |
 | 重新说一遍不重新请求模型。 | 是 | 已采用，只重播本地 TTS。 |
 | 流式文本显示不增加额外模型调用。 | 是 | 已采用，同一次对话调用中按增量返回文本。 |
+| 历史图片不直接写入数据库。 | 是 | 已采用，最后一帧保存到 MinIO，数据库只保存 bucket、objectKey、sha256 等对象引用。 |
 | 成本指标默认不打扰用户。 | 是 | 已采用，右侧“成本与调试”默认折叠。 |
 | 用户级预算、调用审计和数据库报表。 | 是 | 暂未实现，作为后续增强。 |
 
@@ -102,6 +105,10 @@
 - `POST /api/vision/analyze-sequence`：HTTP 多帧动作分析，作为 WebSocket 不可用时的兜底。
 - `POST /api/conversation/respond`：HTTP 对话回复兜底，携带 `sceneMode`、视觉观察、动作变化和历史上下文。
 - `POST /api/conversation/respond-stream`：HTTP 流式对话回复，使用 `text/event-stream` 返回 `meta`、`delta`、`done` 和 `error` 事件。
+- `POST /api/session/end`：结束会话，归档消息、指标和最后一帧图片引用。
+- `GET /api/session/history`：获取已结束历史会话列表。
+- `GET /api/session/history/:sessionId`：获取某次历史会话详情。
+- `GET /api/session/history/:sessionId/final-frame-url`：获取最后一帧 MinIO 预签名访问地址。
 - `WS /api/omni/realtime`：流式视觉记忆与对话通道。
   - 客户端事件：`start`、`video_frame`、`vision_context`、`text`、`stop`。
   - 服务端事件：`ready`、`video_summary`、`action_timeline`、`video_status`、`vision_memory_status`、`text`、`error`、`closed`。
@@ -111,6 +118,6 @@
 1. 接入 DashScope 原生实时音视频能力，替换当前浏览器语音识别和关键帧近似方案。
 2. 增加流式 TTS 或云端实时语音输出，让播报也能边生成边播放。
 3. 增加用户级限流、预算告警、调用审计和成本报表。
-4. 将会话、消息、视觉观察、动作变化和指标持久化到数据库。
-5. 增加端到端演示脚本，覆盖摄像头授权、WebSocket 观察、语音提问、动作问题和降级路径。
+4. 增加历史记录删除、导出和按场景筛选。
+5. 增加端到端演示脚本，覆盖摄像头授权、WebSocket 观察、语音提问、动作问题、历史归档和降级路径。
 6. 引入更强的动作理解策略，例如更长窗口、多尺度关键帧选择或轻量本地姿态估计。
