@@ -1,6 +1,7 @@
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./modules/app.module.js";
 import { ConversationHistoryService } from "./modules/conversation/conversation-history.service.js";
+import { VisionMemoryService } from "./modules/conversation/vision-memory.service.js";
 import { OpenaiService } from "./modules/openai/openai.service.js";
 import { attachOmniWebSocketProxy } from "./modules/omni/omni-ws.js";
 
@@ -17,6 +18,7 @@ const bootstrap = async () => {
     server,
     app.get(OpenaiService),
     app.get(ConversationHistoryService),
+    app.get(VisionMemoryService),
   );
 };
 

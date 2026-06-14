@@ -11,6 +11,7 @@ import type {
   VisionSummary,
 } from "@ai-vision/shared";
 import type { ConversationHistoryService } from "../conversation/conversation-history.service.js";
+import type { VisionMemoryService } from "../conversation/vision-memory.service.js";
 import type { OpenaiService } from "../openai/openai.service.js";
 
 type OmniConnectionState = {
@@ -220,9 +221,25 @@ const sendStatus = (socket: Socket, state: OmniConnectionState) => {
   });
 };
 
+const sendMemoryStatus = (
+  socket: Socket,
+  state: OmniConnectionState,
+  visionMemoryService: VisionMemoryService,
+) => {
+  sendJson(socket, {
+    type: "vision_memory_status",
+    visualContextFreshness: visionMemoryService.getFreshness(state.sessionId),
+    analyzing: visionMemoryService.isAnalyzing(state.sessionId),
+    visionSummaryAt: state.visionSummary?.createdAt ?? null,
+    visionTimelineAt: state.visionTimeline?.createdAt ?? null,
+    updatedAt: new Date().toISOString(),
+  });
+};
+
 const handleVideoFrame = (
   netSocket: Socket,
   openaiService: OpenaiService,
+  visionMemoryService: VisionMemoryService,
   state: OmniConnectionState,
   frame: VideoStreamFrame,
 ) => {
@@ -240,6 +257,8 @@ const handleVideoFrame = (
 
   if (now - state.lastSummaryAt >= summaryIntervalMs) {
     state.lastSummaryAt = now;
+    visionMemoryService.setAnalyzing(state.sessionId, "summary", true);
+    sendMemoryStatus(netSocket, state, visionMemoryService);
     const startedAt = Date.now();
     void openaiService
       .analyzeImage(frame.imageBase64, "low")
@@ -252,6 +271,7 @@ const handleVideoFrame = (
           Buffer.byteLength(frame.imageBase64),
           Date.now() - startedAt,
         );
+        visionMemoryService.updateSummary(state.sessionId, state.visionSummary);
         sendJson(netSocket, {
           type: "video_summary",
           snapshot: state.visionSummary,
@@ -266,6 +286,10 @@ const handleVideoFrame = (
           type: "error",
           message: state.lastError,
         });
+      })
+      .finally(() => {
+        visionMemoryService.setAnalyzing(state.sessionId, "summary", false);
+        sendMemoryStatus(netSocket, state, visionMemoryService);
       });
   }
 
@@ -276,6 +300,8 @@ const handleVideoFrame = (
   ) {
     state.lastTimelineAt = now;
     state.timelineAnalysesInFlight = true;
+    visionMemoryService.setAnalyzing(state.sessionId, "timeline", true);
+    sendMemoryStatus(netSocket, state, visionMemoryService);
     const selectedFrames = [...state.videoFrames];
     const startedAt = Date.now();
     void openaiService
@@ -290,6 +316,7 @@ const handleVideoFrame = (
           analysis,
           Date.now() - startedAt,
         );
+        visionMemoryService.updateTimeline(state.sessionId, state.visionTimeline);
         sendJson(netSocket, {
           type: "action_timeline",
           timeline: state.visionTimeline,
@@ -308,7 +335,9 @@ const handleVideoFrame = (
       })
       .finally(() => {
         state.timelineAnalysesInFlight = false;
+        visionMemoryService.setAnalyzing(state.sessionId, "timeline", false);
         sendStatus(netSocket, state);
+        sendMemoryStatus(netSocket, state, visionMemoryService);
       });
   }
 
@@ -319,6 +348,7 @@ export const attachOmniWebSocketProxy = (
   server: Server,
   openaiService: OpenaiService,
   historyService: ConversationHistoryService,
+  visionMemoryService: VisionMemoryService,
 ) => {
   server.on("upgrade", (request, socket) => {
     const netSocket = socket as Socket;
@@ -361,59 +391,76 @@ export const attachOmniWebSocketProxy = (
 
         if (event.type === "start") {
           state.sessionId = event.sessionId;
+          const memory = visionMemoryService.getMemory(state.sessionId);
+          state.visionSummary = memory.visionSummary;
+          state.visionTimeline = memory.visionTimeline;
           sendJson(netSocket, { type: "ready", provider: "fallback" });
+          sendMemoryStatus(netSocket, state, visionMemoryService);
         }
 
         if (event.type === "vision_context") {
           state.visionSummary = event.snapshot;
-          sendJson(netSocket, {
-            type: "text",
-            text: "视觉摘要已同步。",
-            final: true,
-          });
+          visionMemoryService.updateSummary(state.sessionId, event.snapshot);
+          sendMemoryStatus(netSocket, state, visionMemoryService);
         }
 
         if (event.type === "video_frame") {
-          handleVideoFrame(netSocket, openaiService, state, event.frame);
+          handleVideoFrame(
+            netSocket,
+            openaiService,
+            visionMemoryService,
+            state,
+            event.frame,
+          );
         }
 
         if (event.type === "text") {
-          const turnContext = {
-            visionTimeline: state.visionTimeline,
-            visionSummary: state.visionSummary,
-          };
-          const requestBody: ConversationRequest = {
-            sessionId: state.sessionId,
-            text: event.text,
-            sceneMode: event.sceneMode,
-            ...turnContext,
-            history: historyService.getHistory(state.sessionId),
-          };
-
-          void openaiService
-            .createConversationReply(requestBody)
-            .then((reply) => {
-              historyService.recordUserTurn(
-                state.sessionId,
-                event.text,
-                turnContext,
-              );
-              historyService.recordAssistantTurn(state.sessionId, reply, {
-                ...turnContext,
-                imageReference:
-                  historyService.getHistory(state.sessionId).at(-1)?.context
-                    ?.imageReference ?? null,
-              });
-              sendJson(netSocket, { type: "text", text: reply, final: true });
-            })
-            .catch((error: unknown) =>
-              sendJson(netSocket, {
-                type: "error",
-                message: `通义千问回复失败：${String(
-                  error instanceof Error ? error.message : error,
-                )}`,
-              }),
+          void (async () => {
+            const waitedForFreshVision =
+              await visionMemoryService.waitForFreshContext(state.sessionId);
+            const resolvedContext = visionMemoryService.resolveContext(
+              state.sessionId,
+              {
+                visionSummary: state.visionSummary,
+                visionTimeline: state.visionTimeline,
+              },
+              waitedForFreshVision,
             );
+            state.visionSummary = resolvedContext.visionSummary;
+            state.visionTimeline = resolvedContext.visionTimeline;
+            const turnContext = {
+              visionTimeline: resolvedContext.visionTimeline,
+              visionSummary: resolvedContext.visionSummary,
+            };
+            const requestBody: ConversationRequest = {
+              sessionId: state.sessionId,
+              text: event.text,
+              sceneMode: event.sceneMode,
+              ...turnContext,
+              history: historyService.getHistory(state.sessionId),
+            };
+            const reply = await openaiService.createConversationReply(requestBody);
+            historyService.recordUserTurn(state.sessionId, event.text, turnContext);
+            historyService.recordAssistantTurn(state.sessionId, reply, {
+              ...turnContext,
+              imageReference:
+                historyService.getHistory(state.sessionId).at(-1)?.context
+                  ?.imageReference ?? null,
+            });
+            sendJson(netSocket, {
+              type: "text",
+              text: reply,
+              final: true,
+              usedVisionContext: resolvedContext.usedVisionContext,
+            });
+          })().catch((error: unknown) =>
+            sendJson(netSocket, {
+              type: "error",
+              message: `Conversation reply failed: ${String(
+                error instanceof Error ? error.message : error,
+              )}`,
+            }),
+          );
         }
 
         if (event.type === "stop") {

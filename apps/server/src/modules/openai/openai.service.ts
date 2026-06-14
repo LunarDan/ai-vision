@@ -21,24 +21,24 @@ type ImageSequenceAnalysis = {
 
 const sceneModePrompts: Record<SceneMode, string> = {
   general:
-    "当前场景是通用视觉对话。请均衡参考画面摘要、动作时间线和历史对话，直接回答用户问题。",
+    "当前场景是通用视觉对话。请结合当前画面、最近动作和历史对话，像正在自然交流一样直接回答用户。",
   action:
-    "当前场景是动作理解助手。用户通常关心刚才做了什么、有没有移动、手势或连续变化。回答时优先参考最近几秒动作时间线，再结合当前画面摘要；不要把静态外观误判成动作。",
+    "当前场景是动作理解助手。用户通常关心刚才做了什么、有没有移动、手势或连续变化。回答时优先描述动作变化，不要把静态外观误判成动作。",
   study:
-    "当前场景是桌面学习助手。用户通常会展示纸张、笔记、题目、书本、桌面物品或屏幕外内容。回答时优先解释当前画面中可见的学习/办公内容，并支持基于历史的连续追问。",
+    "当前场景是桌面学习助手。用户可能展示纸张、笔记、题目、书本或桌面物品。回答时优先解释可见的学习和办公内容，并支持连续追问。",
   interview:
-    "当前场景是演讲/面试练习助手。用户通常希望获得表达状态、视线、坐姿、手势和临场表现反馈。回答时给出简短、建设性的观察与建议；如果无法从画面判断，请明确说明。",
+    "当前场景是演讲/面试练习助手。用户希望获得表达状态、视线、坐姿、手势和临场表现反馈。回答时给出简短、建设性的观察和建议。",
   life:
-    "当前场景是生活提醒助手。用户通常关心画面里的物品、变化和需要注意的地方。回答时偏向轻量提醒、物品变化和潜在风险，但不要夸大危险或做无法确认的判断。",
+    "当前场景是生活提醒助手。用户通常关心画面里的物品、变化和需要注意的地方。回答时偏向轻量提醒、物品变化和潜在风险，但不要夸大危险。",
 };
 
 const formatHistoryItem = (item: ConversationHistoryItem) => {
   const context = item.context;
   const visualSummary = context?.visionSummary?.summary
-    ? `\n当时画面摘要：${context.visionSummary.summary}`
+    ? `\n当时看到：${context.visionSummary.summary}`
     : "";
   const actionSummary = context?.visionTimeline?.summary
-    ? `\n当时动作时间线：${context.visionTimeline.summary}`
+    ? `\n当时动作：${context.visionTimeline.summary}`
     : "";
   const imageReference = context?.imageReference
     ? `\n当时关联图片引用：${JSON.stringify(context.imageReference)}`
@@ -173,28 +173,28 @@ export class OpenaiService {
     const historyContext =
       request.history && request.history.length > 0
         ? [
-            "最近对话历史如下。用户追问“刚才那张图”“它”“继续说”等内容时，请结合这些历史；如果历史和当前视觉上下文冲突，以当前视觉上下文为准。",
+            "最近对话历史如下。用户追问前文时请结合历史；如果历史和当前画面冲突，以当前画面为准。",
             ...request.history.slice(-20).map(formatHistoryItem),
           ].join("\n\n")
         : "当前会话没有可用的历史对话。";
     const visualContext = request.visionSummary
       ? [
-          "最近一次摄像头画面摘要：",
+          "当前可见画面：",
           request.visionSummary.summary,
-          `分析时间：${request.visionSummary.createdAt}`,
+          `内部时间：${request.visionSummary.createdAt}`,
         ].join("\n")
-      : "当前没有可用的摄像头画面摘要。";
+      : "当前没有可用的画面信息。";
     const actionContext = request.visionTimeline
       ? [
-          "最近几秒动作时间线：",
+          "刚才几秒内的动作变化：",
           request.visionTimeline.summary,
           ...request.visionTimeline.steps.map(
             (step) => `${step.timeRange}：${step.description}`,
           ),
-          `动作分析窗口：${request.visionTimeline.startedAt} 到 ${request.visionTimeline.endedAt}`,
-          `置信说明：${request.visionTimeline.confidenceNote}`,
+          `内部动作窗口：${request.visionTimeline.startedAt} 到 ${request.visionTimeline.endedAt}`,
+          `可信度说明：${request.visionTimeline.confidenceNote}`,
         ].join("\n")
-      : "当前没有可用的多帧动作时间线。";
+      : "当前没有可用的动作变化信息。";
 
     const result = await this.client.chat.completions.create({
       model,
@@ -202,16 +202,16 @@ export class OpenaiService {
         {
           role: "system",
           content:
-            "你是一个通义千问视觉语音助手。回答要自然、简短、中文优先。用户问当前画面时，参考最近摄像头关键帧摘要；用户问刚才发生了什么、做了什么动作、手势或连续变化时，优先参考最近几秒多帧动作时间线。用户追问前文时，参考最近对话历史。场景模式只改变回答侧重点，不改变事实判断。如果摘要、时间线或历史可能漏帧、过期、信息不足或无法确定，要明确说明不确定，不要假装正在连续观看完整实时视频。",
+            "你是一个正在和用户自然对话的视觉语音助手。回答要像现场看着画面聊天一样，中文优先，简短直接。不要在回复里说“视觉摘要”“动作时间线”“基于某个时间”“上下文显示”等内部实现词。用户问当前画面时，直接说你看到的内容；用户问刚才发生了什么时，直接描述刚才的动作变化。如果信息不足、可能漏帧或看不清，可以自然地说“我不太确定”或“我刚才只看到……”。场景模式只改变回答侧重点，不改变事实判断。",
         },
         {
           role: "user",
-          content: `${sceneContext}\n\n${historyContext}\n\n${visualContext}\n\n${actionContext}\n\n用户语音文本：${request.text}`,
+          content: `${sceneContext}\n\n${historyContext}\n\n${visualContext}\n\n${actionContext}\n\n用户刚才说：${request.text}`,
         },
       ],
     });
 
-    return result.choices[0]?.message.content || "我暂时无法生成回答。";
+    return result.choices[0]?.message.content || "我暂时没法生成回答。";
   }
 
   getRealtimeEndpoint() {
