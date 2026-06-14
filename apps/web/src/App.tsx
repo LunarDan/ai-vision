@@ -13,7 +13,9 @@
   RotateCcw,
   ScanEye,
   Send,
+  Moon,
   Sparkles,
+  Sun,
   Video,
   VideoOff,
   Volume2,
@@ -74,6 +76,7 @@ const actionQuestionBurstFrames = 6;
 const customSceneModesStorageKey = "ai-vision.customSceneModes.v1";
 const selectedCustomSceneModeStorageKey = "ai-vision.selectedCustomSceneMode.v1";
 const speechRateStorageKey = "ai-vision.speechRate.v1";
+const themeModeStorageKey = "ai-vision.themeMode.v1";
 const maxCustomSceneModes = 5;
 const minSpeechRate = 0.5;
 const maxSpeechRate = 3;
@@ -88,6 +91,7 @@ type TimelineMessage = {
 type VisionContextSyncState = "idle" | "pending" | "synced" | "failed";
 type BackendStatus = "unknown" | "online" | "offline";
 type VideoStreamStatus = "idle" | "connecting" | "connected" | "fallback";
+type ThemeMode = "dark" | "light";
 type AssistantReplyPayload = {
   reply: string;
   usedVisionContext?: UsedVisionContext;
@@ -129,6 +133,11 @@ const parseStoredSpeechRate = () => {
     ? clampSpeechRate(storedRate)
     : defaultSpeechRate;
 };
+
+const parseStoredThemeMode = (): ThemeMode =>
+  window.localStorage.getItem(themeModeStorageKey) === "light"
+    ? "light"
+    : "dark";
 
 const normalizeList = (items: string[]) =>
   items
@@ -282,6 +291,9 @@ export const App = () => {
     () =>
       window.localStorage.getItem(selectedCustomSceneModeStorageKey) ?? "",
   );
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() =>
+    parseStoredThemeMode(),
+  );
   const [customSceneDraft, setCustomSceneDraft] =
     useState<CustomSceneModeDraft>(() => createEmptyCustomModeDraft());
   const [metrics, setMetrics] = useState(() => createInitialMetrics(sessionId));
@@ -374,6 +386,10 @@ export const App = () => {
   useEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
+
+  useEffect(() => {
+    window.localStorage.setItem(themeModeStorageKey, themeMode);
+  }, [themeMode]);
 
   useEffect(() => {
     window.localStorage.setItem(speechRateStorageKey, speechRate.toFixed(1));
@@ -2265,6 +2281,8 @@ export const App = () => {
               ? appCopy.voiceStatusHeard
               : appCopy.voiceStatusIdle;
   const canReplayLastReply = lastAssistantReply.trim().length > 0;
+  const nextThemeMode = themeMode === "dark" ? "light" : "dark";
+  const ThemeIcon = themeMode === "dark" ? Sun : Moon;
   const observationText =
     visionSummary?.summary ?? appCopy.noObservationYet;
   const changeText =
@@ -2426,7 +2444,7 @@ export const App = () => {
   );
 
   return (
-    <main className="shell dark">
+    <main className={`shell ${themeMode}`}>
       <aside className="sidebar">
         <div className="brand-block">
           <div className="brand-mark">
@@ -2470,10 +2488,10 @@ export const App = () => {
         </Card>
 
         <div className="timeline" ref={timelineRef} aria-live="polite">
-          {messages.map((message) => (
+          {messages.filter((message) => message.role !== "system").map((message) => (
             <div className={`message ${message.role}`} key={message.id}>
               <span>
-                {message.role === "assistant" ? "AI" : message.role === "user" ? "User" : "System"}
+                {message.role === "assistant" ? "AI" : "User"}
               </span>
               <p>{message.content}</p>
             </div>
@@ -2510,10 +2528,29 @@ export const App = () => {
             <p className="eyebrow">{appCopy.realtimeLabel}</p>
             <h2>{appCopy.stageTitle}</h2>
           </div>
-          <Badge className={`status ${phase}`} variant="default">
-            <Activity size={14} />
-            {phaseLabels[phase]}
-          </Badge>
+          <div className="topbar-actions">
+            <Badge className={`status ${phase}`} variant="default">
+              <Activity size={14} />
+              {phaseLabels[phase]}
+            </Badge>
+            <Button
+              className="theme-toggle"
+              onClick={() => setThemeMode(nextThemeMode)}
+              title={
+                themeMode === "dark"
+                  ? appCopy.themeSwitchToLight
+                  : appCopy.themeSwitchToDark
+              }
+              variant="outline"
+            >
+              <ThemeIcon size={16} />
+              <span className="sr-only">
+                {themeMode === "dark"
+                  ? appCopy.themeSwitchToLight
+                  : appCopy.themeSwitchToDark}
+              </span>
+            </Button>
+          </div>
         </header>
 
         <Card className={`voice-status-card ${phase}`}>
