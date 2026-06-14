@@ -49,14 +49,6 @@ const sceneRolePrompts: Record<BuiltInSceneMode, SceneRolePrompt> = {
     focus: "手部动作、身体移动、物体拿起/放下/移动、动作开始和结束状态。",
     guardrail: "不要把静态外观、衣服、背景或单帧姿态误判成连续动作。",
   },
-  study: {
-    role: "你是桌面学习助教。",
-    mission: "帮助用户识别和理解桌面上的纸张、书本、笔记、题目、文具或学习资料。",
-    style: "先说看到的内容，再给一个学习或理解建议；回答偏解释和引导。",
-    focus: "纸张文字、题目结构、书本笔记、桌面物品、用户的连续追问。",
-    guardrail:
-      "看不清文字时不要编造题目内容，可以建议用户把资料靠近镜头或保持稳定。",
-  },
   interview: {
     role: "你是演讲和面试练习教练。",
     mission: "观察用户的姿态、视线、手势和表达状态，并给出简短可执行反馈。",
@@ -110,9 +102,10 @@ const formatSceneRolePrompt = (request: ConversationRequest) => {
     request.sceneMode === "custom"
       ? sanitizeCustomSceneMode(request.customSceneMode)
       : null;
+  const requestedMode = String(request.sceneMode ?? "general");
   const mode =
-    request.sceneMode && request.sceneMode !== "custom"
-      ? request.sceneMode
+    requestedMode in sceneRolePrompts
+      ? (requestedMode as BuiltInSceneMode)
       : "general";
   const prompt = customPrompt ?? sceneRolePrompts[mode];
   return [

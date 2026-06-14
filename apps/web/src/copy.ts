@@ -23,13 +23,6 @@ export const sceneModeCopy: Record<BuiltInSceneMode, SceneModeProfile> = {
     examples: ["我刚才做了什么动作？", "我有没有拿起东西？", "我的手势有什么变化？"],
     nextSteps: ["做一个明显动作", "等待右侧出现最近变化", "询问刚才发生了什么"],
   },
-  study: {
-    label: "桌面学习助手",
-    description: "关注纸张、笔记、题目、书本和桌面内容，支持连续追问。",
-    focus: ["资料识别", "桌面物品", "学习追问"],
-    examples: ["帮我看一下这页内容。", "这道题应该怎么理解？", "我桌上有哪些学习资料？"],
-    nextSteps: ["把资料放到镜头前", "保持画面稳定", "围绕内容继续追问"],
-  },
   interview: {
     label: "演讲/面试练习助手",
     description: "观察姿态、视线、手势和表达状态，给出简短反馈。",

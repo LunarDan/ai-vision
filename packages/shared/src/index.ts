@@ -7,7 +7,6 @@ export type CostMode = "balanced" | "economy" | "detail";
 export type BuiltInSceneMode =
   | "general"
   | "action"
-  | "study"
   | "interview"
   | "life";
 
