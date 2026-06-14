@@ -5,54 +5,60 @@ export type SceneModeProfile = {
   description: string;
   focus: string[];
   examples: string[];
+  nextSteps: string[];
 };
 
 export const sceneModeCopy: Record<SceneMode, SceneModeProfile> = {
   general: {
     label: "通用视觉对话",
-    description: "均衡理解当前画面、最近动作和历史追问，适合自由交流。",
-    focus: ["当前画面", "最近动作", "连续追问"],
-    examples: ["你现在看到了什么？", "刚才发生了什么？"],
+    description: "适合自由询问当前画面、最近变化和连续追问。",
+    focus: ["当前画面", "最近变化", "连续追问"],
+    examples: ["你现在看到什么？", "刚才发生了什么？", "我手里拿的是什么？"],
+    nextSteps: ["连接摄像头和麦克风", "让 AI 先观察几秒", "直接语音或打字提问"],
   },
   action: {
     label: "动作理解助手",
-    description: "优先理解最近几秒的动作、移动和手势变化。",
-    focus: ["动作时间线", "手势变化", "物体移动"],
-    examples: ["我刚才做了什么动作？", "我有没有拿起东西？"],
+    description: "重点理解最近几秒的动作、手势和物体移动。",
+    focus: ["动作变化", "手势判断", "物体移动"],
+    examples: ["我刚才做了什么动作？", "我有没有拿起东西？", "我的手势有什么变化？"],
+    nextSteps: ["做一个明显动作", "等待右侧出现最近变化", "询问刚才发生了什么"],
   },
   study: {
     label: "桌面学习助手",
     description: "关注纸张、笔记、题目、书本和桌面内容，支持连续追问。",
-    focus: ["纸张/笔记", "桌面物品", "学习追问"],
-    examples: ["我手里拿的是什么？", "帮我看一下这页内容。"],
+    focus: ["资料识别", "桌面物品", "学习追问"],
+    examples: ["我手里拿的是什么？", "帮我看一下这页内容。", "这道题应该怎么理解？"],
+    nextSteps: ["把资料放到镜头前", "保持画面稳定", "围绕内容继续追问"],
   },
   interview: {
     label: "演讲/面试练习助手",
     description: "观察姿态、视线、手势和表达状态，给出简短反馈。",
     focus: ["坐姿视线", "手势状态", "表达反馈"],
-    examples: ["我刚才表现怎么样？", "我的坐姿和视线自然吗？"],
+    examples: ["我刚才表现怎么样？", "我的坐姿和视线自然吗？", "我有哪些可以改进的地方？"],
+    nextSteps: ["对着镜头说一段话", "保持自然手势", "让 AI 给出简短改进建议"],
   },
   life: {
     label: "生活提醒助手",
     description: "关注物品变化、桌面状态和需要注意的轻量提醒。",
-    focus: ["物品变化", "桌面状态", "潜在提醒"],
-    examples: ["画面里有什么需要注意？", "桌面上有什么变化？"],
+    focus: ["物品变化", "桌面状态", "轻量提醒"],
+    examples: ["画面里有什么需要注意？", "桌面上有什么变化？", "我是不是忘了什么东西？"],
+    nextSteps: ["让桌面或物品进入画面", "移动或拿起关键物品", "询问需要注意的地方"],
   },
 };
 
 export const appCopy = {
   initialAssistantMessage:
-    "准备就绪。授权摄像头和麦克风后，我可以一边看画面，一边听你说话。",
+    "准备好了。连接摄像头和麦克风后，我可以一边看画面，一边听你说话；你也可以直接打字提问。",
   mediaConnectedMessage: "摄像头和麦克风已连接。",
   mediaVideoOnlyMessage:
-    "摄像头已连接，但麦克风不可用；可以先使用画面分析，语音识别可能无法启动。",
+    "摄像头已连接，但麦克风不可用；可以先使用文字提问或画面分析。",
   cameraSwitchedMessage: "已切换摄像头设备。",
   realtimeConnectedMessage: "语音识别已启动，可以开始说话。",
   backendOnlineMessage: "后端服务已连接。",
   backendOfflineMessage:
     "后端服务未连接，请先启动 NestJS 服务后再进行语音问答或画面分析。",
   voiceDisabledBackendOffline:
-    "摄像头预览可继续使用；后端未运行时，语音问题不会发送。",
+    "摄像头预览可继续使用；后端未运行时，问题不会发送。",
   realtimeConnectionError:
     "语音通道连接失败，请确认后端服务、DashScope Key 和浏览器授权正常。",
   cameraPermissionError: "无法连接摄像头，请检查浏览器授权后重试。",
@@ -63,7 +69,7 @@ export const appCopy = {
   cameraPermissionDeniedError:
     "浏览器拒绝了摄像头权限，请在地址栏左侧站点设置中允许摄像头后重试。",
   microphoneUnavailableMessage:
-    "麦克风不可用或未授权，本次会话已降级为仅摄像头模式。",
+    "麦克风不可用或未授权，本次会话已降级为摄像头加文字输入模式。",
   microphonePermissionDeniedError:
     "浏览器拒绝了麦克风权限，请在地址栏左侧站点设置中允许麦克风后重试。",
   microphoneNotFoundError:
@@ -77,24 +83,24 @@ export const appCopy = {
   cameraFrameWaiting:
     "摄像头已授权，正在等待视频首帧。如果一直黑屏，请确认没有其他程序占用摄像头。",
   cameraMutedState: "无画面",
-  cameraNotReadyMessage: "摄像头画面还没有准备好，请稍等一秒再分析。",
+  cameraNotReadyMessage: "摄像头画面还没有准备好，请稍等一下再分析。",
   autoVisionCaptureMessage:
-    "正在读取当前摄像头画面，并作为这次语音问题的视觉上下文。",
+    "正在读取当前摄像头画面，并作为这次问题的视觉上下文。",
   autoVisionCaptureFailed:
-    "这次没有成功读取摄像头画面，将先用已有视觉摘要继续回答。",
+    "这次没有成功读取摄像头画面，将先用已有画面继续回答。",
   visionAnalyzeError:
     "画面分析失败，请确认后端服务和 DashScope 配置正常。",
   actionAnalyzeError:
     "动作序列分析失败，请确认后端服务和 DashScope 配置正常。",
   conversationError:
-    "语音问题发送失败，请确认后端服务正在运行。",
+    "问题发送失败，请确认后端服务正在运行。",
   sessionEndError: "会话结束请求没有成功，但本地设备已经关闭。",
-  visionContextSynced: "最新视觉摘要已同步到语音上下文。",
+  visionContextSynced: "最新画面已准备好用于下一次回答。",
   visionContextSyncFailed:
-    "视觉摘要会在下一次语音问题中作为上下文发送。",
+    "画面会在下一次问题中作为上下文发送。",
   speechUnsupported: "当前浏览器不支持语音识别，请使用 Chrome 或 Edge 测试。",
   speechRecognitionError:
-    "浏览器语音识别启动失败，但摄像头仍可继续使用。",
+    "浏览器语音识别启动失败，但摄像头和文字提问仍可继续使用。",
   title: "视觉对话工作台",
   currentSession: "当前会话",
   realtimeLabel: "Qwen Omni Voice + Vision",
@@ -106,11 +112,11 @@ export const appCopy = {
   micMuted: "麦克风静音",
   backendOnline: "后端在线",
   backendOffline: "后端离线",
-  backendUnknown: "后端未知",
-  videoStreamConnected: "视频流已连接",
-  videoStreamConnecting: "视频流连接中",
-  videoStreamFallback: "视频流降级",
-  videoStreamIdle: "视频流空闲",
+  backendUnknown: "后端检测中",
+  videoStreamConnected: "视频观察中",
+  videoStreamConnecting: "视频连接中",
+  videoStreamFallback: "视频降级",
+  videoStreamIdle: "视频待机",
   cameraDeviceLabel: "摄像头",
   cameraDevicePlaceholder: "授权后显示设备",
   unknownCamera: "摄像头",
@@ -129,23 +135,36 @@ export const appCopy = {
   interruptSpeechTitle: "停止当前播报并继续听你说话",
   endSession: "结束会话",
   endSessionTitle: "结束会话",
-  visionSummaryLabel: "Vision Summary",
-  currentViewTitle: "AI 当前看到",
+  currentViewTitle: "AI 当前观察",
+  recentActionTitle: "刚才发生了什么",
   emptySummary:
-    "还没有分析画面。点击分析画面后，视觉摘要会作为下一次语音问题的上下文。",
-  updatedAt: "更新于",
-  waitingFirstFrame: "等待第一帧",
-  actionTimelineLabel: "Action Timeline",
-  recentActionTitle: "最近动作",
+    "还没有可用画面。连接摄像头后，我会在这里概括当前看到的内容。",
   emptyActionTimeline:
-    "还没有形成动作时间线。自动观察会以 2 FPS 本地采样，去重后批量分析最近几秒动作。",
-  confidenceNoteLabel: "置信说明",
+    "还没有明显变化。做一个动作、移动物品或等待自动观察几秒后，这里会显示最近发生的事。",
+  updatedAt: "更新于",
+  waitingFirstFrame: "等待画面",
+  confidenceNoteLabel: "可信度",
   visionContextSyncLabels: {
-    idle: "未同步到语音上下文",
-    pending: "等待下一次语音问题",
-    synced: "已准备为语音上下文",
-    failed: "等待语音问题携带",
+    idle: "等待观察",
+    pending: "准备中",
+    synced: "已准备",
+    failed: "等待下一次提问",
   },
+  assistantPanelLabel: "Scene Assistant",
+  demoQuestionsTitle: "推荐提问",
+  nextStepsTitle: "演示建议",
+  observationTitle: "当前观察",
+  changeTitle: "最近变化",
+  noObservationYet: "连接摄像头后，这里会显示 AI 对当前画面的自然观察。",
+  noChangeYet: "暂时还没有捕捉到明显动作。你可以挥手、拿起物品或转头试试。",
+  askQuestionTitle: "发送这个推荐问题",
+  costDebugTitle: "成本与调试",
+  costDebugCollapsed:
+    "低成本观察中：本地采样、静止跳过、云端按需分析。",
+  costDebugExpanded:
+    "这些指标用于答辩说明端云协同策略，默认折叠以保持 demo 界面干净。",
+  showDebug: "展开指标",
+  hideDebug: "收起指标",
   metricVisionRequests: "视觉请求",
   metricLowDetail: "低细节",
   metricHighDetail: "高细节",
@@ -162,9 +181,9 @@ export const appCopy = {
   metricVideoStreamStatus: "视频流",
   metricStreamedFrames: "流式帧",
   metricStreamBuffer: "流缓冲",
-  metricStreamCloudAnalyses: "流式云分析",
-  metricStreamTimelineAnalyses: "流式动作成功",
-  metricStreamTimelineErrors: "流式动作失败",
+  metricStreamCloudAnalyses: "云端分析",
+  metricStreamTimelineAnalyses: "动作成功",
+  metricStreamTimelineErrors: "动作失败",
   metricLastVideoStreamAt: "最近流更新",
   metricLastStreamError: "最近流错误",
   noAutoVisionYet: "暂无",
@@ -172,14 +191,14 @@ export const appCopy = {
   fingerprintPending: "等待中",
   costStrategyLabel: "Cost Strategy",
   strategies: [
-    "自动观察在本地 2 FPS 采样",
-    "低变化动作帧本地去重",
-    "WebSocket 只推送去重关键帧",
+    "浏览器本地 2 FPS 采样，不等于云端 2 FPS 调用",
+    "低变化帧在本地去重，不上传",
+    "WebSocket 只推送压缩后的关键帧",
     "云端按 3-10 秒节流分析短序列",
     "图片压缩到 768px 宽",
     "默认 detail: low",
-    "每分钟最多 6 次自动视觉请求",
-    "语音问题结合最近视觉摘要回答",
+    "每分钟限制自动视觉请求次数",
+    "页面不可见、AI 播报或后端离线时暂停观察",
   ],
   costLevels: {
     low: "低",
@@ -192,7 +211,7 @@ export const phaseLabels: Record<AssistantPhase, string> = {
   idle: "空闲",
   connecting: "连接中",
   listening: "聆听中",
-  thinking: "分析中",
-  speaking: "回应中",
+  thinking: "思考中",
+  speaking: "回复中",
   error: "异常",
 };

@@ -684,6 +684,27 @@ video {
   margin-bottom: 12px;
 }
 
+.panel-section-title {
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 800;
+  margin: 0 0 10px;
+}
+
+.quick-question-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.quick-question-list .ui-button {
+  justify-content: flex-start;
+  min-height: 38px;
+  overflow-wrap: anywhere;
+  text-align: left;
+  white-space: normal;
+}
+
 .scene-examples,
 .strategy-list {
   color: #dbeafe;
@@ -778,6 +799,22 @@ video {
 
 .metric-list.compact {
   grid-template-columns: 1fr;
+}
+
+.cost-summary {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.cost-summary .ui-badge {
+  flex: 1;
+  justify-content: flex-start;
+  min-height: 34px;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .ui-separator {
