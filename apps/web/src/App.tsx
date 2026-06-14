@@ -26,6 +26,7 @@ import type { FormEvent, KeyboardEvent } from "react";
 import type {
   AssistantPhase,
   ConversationResponse,
+  ConversationStreamEvent,
   OmniServerEvent,
   SceneMode,
   SessionMetrics,
@@ -69,6 +70,7 @@ const actionFrameQuality = 0.5;
 const actionQuestionBurstFrames = 6;
 
 type TimelineMessage = {
+  id: string;
   role: "assistant" | "system" | "user";
   content: string;
 };
@@ -187,6 +189,7 @@ export const App = () => {
   const lastVideoStreamErrorAtRef = useRef(0);
   const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const speechFallbackTimerRef = useRef<number | null>(null);
+  const replyStreamAbortRef = useRef<AbortController | null>(null);
   const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(
     null,
   );
@@ -262,9 +265,13 @@ export const App = () => {
   );
   const [debugPanelOpen, setDebugPanelOpen] = useState(false);
   const [messages, setMessages] = useState<TimelineMessage[]>([
-    { role: "assistant", content: appCopy.initialAssistantMessage },
+    {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      content: appCopy.initialAssistantMessage,
+    },
   ]);
-  const isInterruptible = phase === "speaking";
+  const isInterruptible = phase === "speaking" || phase === "thinking";
 
   useEffect(() => {
     phaseRef.current = phase;
@@ -451,14 +458,21 @@ export const App = () => {
     };
   }, [stream, videoElement, updateCameraDiagnostics]);
 
-  const appendMessage = (message: TimelineMessage) => {
-    setMessages((items) => [...items, message]);
+  const appendMessage = (message: Omit<TimelineMessage, "id">) => {
+    const id = crypto.randomUUID();
+    setMessages((items) => [...items, { ...message, id }]);
+    return id;
   };
 
   const appendSystemMessage = (content: string) =>
     appendMessage({ role: "system", content });
   const appendAssistantMessage = (content: string) =>
     appendMessage({ role: "assistant", content });
+  const updateMessageContent = (id: string, content: string) => {
+    setMessages((items) =>
+      items.map((item) => (item.id === id ? { ...item, content } : item)),
+    );
+  };
 
   const clearSpeechFallbackTimer = () => {
     if (speechFallbackTimerRef.current === null) return;
@@ -506,7 +520,9 @@ export const App = () => {
   };
 
   const interruptAssistantSpeech = () => {
-    if (phaseRef.current !== "speaking") return;
+    if (phaseRef.current !== "speaking" && phaseRef.current !== "thinking") return;
+    replyStreamAbortRef.current?.abort();
+    replyStreamAbortRef.current = null;
     clearSpeechFallbackTimer();
     currentUtteranceRef.current = null;
     window.speechSynthesis?.cancel();
@@ -1346,6 +1362,124 @@ export const App = () => {
       text,
     );
 
+  const parseConversationStreamBlock = (block: string) => {
+    const data = block
+      .split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trimStart())
+      .join("\n");
+    if (!data) return null;
+    return JSON.parse(data) as ConversationStreamEvent;
+  };
+
+  const requestStreamingReply = async (
+    text: string,
+    currentVisionSummary: VisionSummary | null,
+    currentActionTimeline: VisionActionTimeline | null,
+    assistantMessageId: string,
+  ) => {
+    if (!("ReadableStream" in window)) return null;
+
+    const abortController = new AbortController();
+    replyStreamAbortRef.current = abortController;
+    const response = await fetch(`${apiBase}/conversation/respond-stream`, {
+      method: "POST",
+      headers: {
+        "Accept": "text/event-stream",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sessionId,
+        text,
+        sceneMode,
+        visionSummary: currentVisionSummary,
+        visionTimeline: currentActionTimeline,
+      }),
+      signal: abortController.signal,
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error(`Conversation stream failed with ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let reply = "";
+    let usedVisionContext: UsedVisionContext | undefined;
+
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+        const blocks = buffer.split("\n\n");
+        buffer = blocks.pop() ?? "";
+
+        for (const block of blocks) {
+          const event = parseConversationStreamBlock(block);
+          if (!event) continue;
+
+          if (event.type === "meta") {
+            usedVisionContext = event.usedVisionContext;
+          }
+          if (event.type === "delta") {
+            reply += event.text;
+            updateMessageContent(assistantMessageId, reply);
+            if (phaseRef.current === "thinking") {
+              setPhase("speaking");
+            }
+          }
+          if (event.type === "done") {
+            reply = event.reply || reply;
+            usedVisionContext = event.usedVisionContext ?? usedVisionContext;
+            updateMessageContent(assistantMessageId, reply);
+            return { reply, usedVisionContext };
+          }
+          if (event.type === "error") {
+            throw new Error(event.message);
+          }
+        }
+
+        if (done) break;
+      }
+    } finally {
+      if (replyStreamAbortRef.current === abortController) {
+        replyStreamAbortRef.current = null;
+      }
+      reader.releaseLock();
+    }
+
+    return reply ? { reply, usedVisionContext } : null;
+  };
+
+  const requestJsonReply = async (
+    text: string,
+    currentVisionSummary: VisionSummary | null,
+    currentActionTimeline: VisionActionTimeline | null,
+  ) => {
+    const response = await fetch(`${apiBase}/conversation/respond`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId,
+        text,
+        sceneMode,
+        visionSummary: currentVisionSummary,
+        visionTimeline: currentActionTimeline,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Conversation API failed with ${response.status}`);
+    }
+
+    const data = (await response.json()) as ConversationResponse;
+    return {
+      reply: data.reply,
+      usedVisionContext: data.usedVisionContext,
+    };
+  };
+
   const askAssistant = async (text: string) => {
     setPhase("thinking");
     setReplyGenerationId((id) => id + 1);
@@ -1382,41 +1516,40 @@ export const App = () => {
         }
       }
 
-      let replyPayload =
-        videoStreamStatusRef.current === "connected"
-          ? await requestVideoStreamReply(text)
-          : null;
-      let reply = replyPayload?.reply ?? null;
-      let usedVisionContext = replyPayload?.usedVisionContext;
-
-      if (!reply) {
-        const response = await fetch(`${apiBase}/conversation/respond`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sessionId,
-            text,
-            sceneMode,
-            visionSummary: currentVisionSummary,
-            visionTimeline: currentActionTimeline,
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error(`Conversation API failed with ${response.status}`);
+      const assistantMessageId = appendAssistantMessage("");
+      let replyPayload: AssistantReplyPayload | null = null;
+      try {
+        replyPayload = await requestStreamingReply(
+          text,
+          currentVisionSummary,
+          currentActionTimeline,
+          assistantMessageId,
+        );
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          updateMessageContent(assistantMessageId, "已停止生成。");
+          setWaitingForFreshVision(false);
+          return;
         }
-
-        const data = (await response.json()) as ConversationResponse;
-        reply = data.reply;
-        usedVisionContext = data.usedVisionContext;
       }
+
+      if (!replyPayload?.reply) {
+        replyPayload = await requestJsonReply(
+          text,
+          currentVisionSummary,
+          currentActionTimeline,
+        );
+        updateMessageContent(assistantMessageId, replyPayload.reply);
+      }
+
+      const reply = replyPayload.reply;
+      const usedVisionContext = replyPayload.usedVisionContext;
 
       setReplyContextTimestamp(
         usedVisionContext?.visionTimelineAt ??
           usedVisionContext?.visionSummaryAt ??
           null,
       );
-      appendAssistantMessage(reply);
       setLastAssistantReply(reply);
       setWaitingForFreshVision(false);
       speakAssistantText(reply);
@@ -1994,8 +2127,8 @@ export const App = () => {
         </Card>
 
         <div className="timeline" ref={timelineRef} aria-live="polite">
-          {messages.map((message, index) => (
-            <div className={`message ${message.role}`} key={`${message.role}-${index}`}>
+          {messages.map((message) => (
+            <div className={`message ${message.role}`} key={message.id}>
               <span>
                 {message.role === "assistant" ? "AI" : message.role === "user" ? "User" : "System"}
               </span>

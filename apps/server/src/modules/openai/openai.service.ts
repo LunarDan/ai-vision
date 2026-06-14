@@ -27,6 +27,11 @@ type SceneRolePrompt = {
   guardrail: string;
 };
 
+type ConversationMessage = {
+  role: "system" | "user";
+  content: string;
+};
+
 const sceneRolePrompts: Record<SceneMode, SceneRolePrompt> = {
   general: {
     role: "你是通用视觉对话伙伴。",
@@ -214,8 +219,9 @@ export class OpenaiService {
     }
   }
 
-  async createConversationReply(request: ConversationRequest) {
-    const model = process.env.OPENAI_VISION_MODEL ?? "qwen3.5-omni-plus";
+  private createConversationMessages(
+    request: ConversationRequest,
+  ): ConversationMessage[] {
     const sceneMode = request.sceneMode ?? "general";
     const sceneContext = formatSceneRolePrompt(sceneMode);
     const historyContext =
@@ -244,22 +250,43 @@ export class OpenaiService {
         ].join("\n")
       : "当前没有可用的动作变化信息。";
 
+    return [
+      {
+        role: "system",
+        content:
+          "你正在和用户进行自然的视觉语音对话。你必须遵守当前场景角色，不同场景下要像不同助手一样工作。回答中文优先，简短直接，像现场看着画面聊天。不要在回复里说“视觉摘要”“动作时间线”“基于某个时间”“上下文显示”等内部实现词。用户问当前画面时，直接说你看到的内容；用户问刚才发生了什么时，直接描述刚才的动作变化。如果信息不足、可能漏帧或看不清，可以自然地说“我不太确定”或“我刚才只看到……”。角色只改变回答身份、关注重点和表达方式，不改变事实判断。",
+      },
+      {
+        role: "user",
+        content: `${sceneContext}\n\n${historyContext}\n\n${visualContext}\n\n${actionContext}\n\n用户刚才说：${request.text}`,
+      },
+    ];
+  }
+
+  async createConversationReply(request: ConversationRequest) {
+    const model = process.env.OPENAI_VISION_MODEL ?? "qwen3.5-omni-plus";
     const result = await this.client.chat.completions.create({
       model,
-      messages: [
-        {
-          role: "system",
-          content:
-            "你正在和用户进行自然的视觉语音对话。你必须遵守当前场景角色，不同场景下要像不同助手一样工作。回答中文优先，简短直接，像现场看着画面聊天。不要在回复里说“视觉摘要”“动作时间线”“基于某个时间”“上下文显示”等内部实现词。用户问当前画面时，直接说你看到的内容；用户问刚才发生了什么时，直接描述刚才的动作变化。如果信息不足、可能漏帧或看不清，可以自然地说“我不太确定”或“我刚才只看到……”。角色只改变回答身份、关注重点和表达方式，不改变事实判断。",
-        },
-        {
-          role: "user",
-          content: `${sceneContext}\n\n${historyContext}\n\n${visualContext}\n\n${actionContext}\n\n用户刚才说：${request.text}`,
-        },
-      ],
+      messages: this.createConversationMessages(request),
     });
 
     return result.choices[0]?.message.content || "我暂时没法生成回答。";
+  }
+
+  async *streamConversationReply(request: ConversationRequest) {
+    const model = process.env.OPENAI_VISION_MODEL ?? "qwen3.5-omni-plus";
+    const stream = await this.client.chat.completions.create({
+      model,
+      messages: this.createConversationMessages(request),
+      stream: true,
+    });
+
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta?.content;
+      if (delta) {
+        yield delta;
+      }
+    }
   }
 
   getRealtimeEndpoint() {
