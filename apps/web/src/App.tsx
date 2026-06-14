@@ -955,6 +955,21 @@ export const App = () => {
     }
   };
 
+  const refreshSessionHistory = async () => {
+    try {
+      const response = await fetch(`${apiBase}/session/history`, {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(`History API failed with ${response.status}`);
+      }
+      const data = (await response.json()) as SessionHistoryListItem[];
+      setSessionHistory(data);
+    } catch {
+      setHistoryError(appCopy.historyLoadError);
+    }
+  };
+
   const toggleSessionHistory = () => {
     if (historyOpen) {
       closeHistoryDetail();
@@ -2099,7 +2114,7 @@ export const App = () => {
           finalFrameImageBase64: finalFrame?.imageBase64,
         }),
       });
-      await loadSessionHistory();
+      await refreshSessionHistory();
     } catch {
       sessionEndFailed = true;
     }
@@ -2955,13 +2970,15 @@ export const App = () => {
                         {appCopy.historyVisionRequestsUnit}
                       </span>
                     </div>
-                    <Button
-                      onClick={closeHistoryDetail}
-                      type="button"
-                      variant="outline"
-                    >
-                      {appCopy.historyBack}
-                    </Button>
+                    <div className="history-detail-actions">
+                      <Button
+                        onClick={closeHistoryDetail}
+                        type="button"
+                        variant="outline"
+                      >
+                        {appCopy.historyBack}
+                      </Button>
+                    </div>
                   </div>
                   <div className="history-messages">
                     {selectedHistory.messages.map((message) => (

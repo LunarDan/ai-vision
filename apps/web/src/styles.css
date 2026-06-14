@@ -401,16 +401,28 @@ h2 {
 }
 
 .history-meta {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
   gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
 }
 
 .history-meta span {
   background: rgba(15, 23, 42, 0.74);
   border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 999px;
-  padding: 5px 9px;
+  border-radius: 8px;
+  line-height: 1.35;
+  min-height: 42px;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.history-detail-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.history-detail-actions .ui-button {
+  width: 100%;
 }
 
 .history-messages {
