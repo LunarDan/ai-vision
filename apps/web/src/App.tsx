@@ -10,11 +10,14 @@
   MicOff,
   PhoneCall,
   Radio,
+  MessageCircle,
+  RotateCcw,
   ScanEye,
   Send,
   Sparkles,
   Video,
   VideoOff,
+  Volume2,
   Wifi,
   XCircle,
 } from "lucide-react";
@@ -150,6 +153,7 @@ export const App = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
+  const typedQuestionInputRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const recognitionRestartTimerRef = useRef<number | null>(null);
   const shouldKeepListeningRef = useRef(false);
@@ -249,6 +253,13 @@ export const App = () => {
   const [replyGenerationId, setReplyGenerationId] = useState(0);
   const [visionUpdatedDuringReply, setVisionUpdatedDuringReply] = useState(false);
   const [typedQuestion, setTypedQuestion] = useState("");
+  const [typedQuestionPlaceholderOverride, setTypedQuestionPlaceholderOverride] =
+    useState<string | null>(null);
+  const [lastAssistantReply, setLastAssistantReply] = useState("");
+  const [lastHeardText, setLastHeardText] = useState("");
+  const [voiceStatusHint, setVoiceStatusHint] = useState<string>(
+    appCopy.voiceHintIdle,
+  );
   const [debugPanelOpen, setDebugPanelOpen] = useState(false);
   const [messages, setMessages] = useState<TimelineMessage[]>([
     { role: "assistant", content: appCopy.initialAssistantMessage },
@@ -258,6 +269,24 @@ export const App = () => {
   useEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
+
+  useEffect(() => {
+    if (lastHeardText && (phase === "thinking" || phase === "speaking")) {
+      return;
+    }
+
+    if (phase === "listening") {
+      setVoiceStatusHint(appCopy.voiceHintListening);
+    } else if (phase === "thinking") {
+      setVoiceStatusHint(appCopy.voiceHintThinking);
+    } else if (phase === "speaking") {
+      setVoiceStatusHint(appCopy.voiceHintSpeaking);
+    } else if (phase === "error") {
+      setVoiceStatusHint(appCopy.voiceHintError);
+    } else {
+      setVoiceStatusHint(appCopy.voiceHintIdle);
+    }
+  }, [lastHeardText, phase]);
 
   useEffect(() => {
     backendStatusRef.current = backendStatus;
@@ -483,6 +512,52 @@ export const App = () => {
     window.speechSynthesis?.cancel();
     setPhase("listening");
     resumeSpeechRecognition();
+  };
+
+  const speakAssistantText = (text: string) => {
+    if (!text.trim()) return;
+    setPhase("speaking");
+    stopSpeechRecognition(false);
+
+    if (!("speechSynthesis" in window)) {
+      setPhase("listening");
+      resumeSpeechRecognition();
+      return;
+    }
+
+    clearSpeechFallbackTimer();
+    currentUtteranceRef.current = null;
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "zh-CN";
+    currentUtteranceRef.current = utterance;
+    let speechFinished = false;
+    const resumeAfterSpeech = () => {
+      if (speechFinished) return;
+      speechFinished = true;
+      if (currentUtteranceRef.current === utterance) {
+        finishAssistantSpeech();
+      }
+    };
+    const fallbackMs = Math.max(3500, Math.min(18000, text.length * 220));
+    speechFallbackTimerRef.current = window.setTimeout(
+      resumeAfterSpeech,
+      fallbackMs,
+    );
+    utterance.onend = resumeAfterSpeech;
+    utterance.onerror = resumeAfterSpeech;
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const replayLastAssistantReply = () => {
+    if (!lastAssistantReply.trim()) return;
+    speakAssistantText(lastAssistantReply);
+  };
+
+  const focusFollowUpInput = () => {
+    setTypedQuestionPlaceholderOverride(appCopy.followUpPlaceholder);
+    typedQuestionInputRef.current?.focus();
   };
 
   const waitForVideoFrame = async () => {
@@ -1342,43 +1417,9 @@ export const App = () => {
           null,
       );
       appendAssistantMessage(reply);
-      setPhase("speaking");
+      setLastAssistantReply(reply);
       setWaitingForFreshVision(false);
-      stopSpeechRecognition(false);
-
-      if ("speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(reply);
-        utterance.lang = "zh-CN";
-        currentUtteranceRef.current = utterance;
-        let speechFinished = false;
-        const resumeAfterSpeech = () => {
-          if (speechFinished) return;
-          speechFinished = true;
-          if (currentUtteranceRef.current === utterance) {
-            finishAssistantSpeech();
-          }
-        };
-        const fallbackMs = Math.max(
-          3500,
-          Math.min(18000, reply.length * 220),
-        );
-        clearSpeechFallbackTimer();
-        speechFallbackTimerRef.current = window.setTimeout(
-          resumeAfterSpeech,
-          fallbackMs,
-        );
-        utterance.onend = () => {
-          resumeAfterSpeech();
-        };
-        utterance.onerror = () => {
-          resumeAfterSpeech();
-        };
-        window.speechSynthesis.speak(utterance);
-      } else {
-        setPhase("listening");
-        resumeSpeechRecognition();
-      }
+      speakAssistantText(reply);
     } catch {
       setPhase("listening");
       setWaitingForFreshVision(false);
@@ -1410,9 +1451,11 @@ export const App = () => {
     currentUtteranceRef.current = null;
     window.speechSynthesis?.cancel();
     stopSpeechRecognition(false);
+    setLastHeardText("");
     appendMessage({ role: "user", content: normalizedText });
     if (options.clearTypedInput) {
       setTypedQuestion("");
+      setTypedQuestionPlaceholderOverride(null);
     }
     void askAssistant(normalizedText);
   };
@@ -1438,6 +1481,8 @@ export const App = () => {
         if (!result?.isFinal) return;
         const text = result[0].transcript.trim();
         if (!text) return;
+        setLastHeardText(text);
+        setVoiceStatusHint(`${appCopy.heardPrefix}${text}`);
         appendMessage({ role: "user", content: text });
         stopSpeechRecognition(false);
         void askAssistant(text);
@@ -1748,11 +1793,25 @@ export const App = () => {
     phase !== "thinking" &&
     typedQuestionText.length > 0;
   const typedQuestionPlaceholder =
-    backendStatus === "online"
+    typedQuestionPlaceholderOverride ??
+    (backendStatus === "online"
       ? "输入问题，按 Enter 发送"
       : backendStatus === "offline"
         ? "后端离线，暂时无法发送"
-        : "正在检测后端服务...";
+        : "正在检测后端服务...");
+  const voiceStatusLabel =
+    phase === "listening"
+      ? appCopy.voiceStatusListening
+      : phase === "thinking"
+        ? appCopy.voiceStatusThinking
+        : phase === "speaking"
+          ? appCopy.voiceStatusSpeaking
+          : phase === "error"
+            ? appCopy.voiceStatusError
+            : lastHeardText
+              ? appCopy.voiceStatusHeard
+              : appCopy.voiceStatusIdle;
+  const canReplayLastReply = lastAssistantReply.trim().length > 0;
   const observationText =
     visionSummary?.summary ?? appCopy.noObservationYet;
   const changeText =
@@ -1947,6 +2006,7 @@ export const App = () => {
 
         <form className="typed-question-form" onSubmit={submitTypedQuestion}>
           <textarea
+            ref={typedQuestionInputRef}
             aria-label="输入文字问题"
             className="typed-question-input"
             disabled={backendStatus !== "online"}
@@ -1979,6 +2039,26 @@ export const App = () => {
             {phaseLabels[phase]}
           </Badge>
         </header>
+
+        <Card className={`voice-status-card ${phase}`}>
+          <CardContent>
+            <div className="voice-status-main">
+              <div className="voice-status-icon">
+                {phase === "speaking" ? <Volume2 size={20} /> : <Mic size={20} />}
+              </div>
+              <div>
+                <p className="eyebrow">{appCopy.voiceStatusTitle}</p>
+                <strong>{voiceStatusLabel}</strong>
+                <span>{voiceStatusHint}</span>
+              </div>
+            </div>
+            {lastHeardText ? (
+              <Badge variant="muted">
+                {appCopy.heardPrefix}{lastHeardText}
+              </Badge>
+            ) : null}
+          </CardContent>
+        </Card>
 
         {isBackendOffline ? (
           <Alert className="status-alert">
@@ -2087,6 +2167,14 @@ export const App = () => {
             <Button variant="outline" onClick={interruptAssistantSpeech} disabled={!isInterruptible} title={appCopy.interruptSpeechTitle}>
               <CircleStop size={18} />
               {appCopy.interruptSpeech}
+            </Button>
+            <Button variant="outline" onClick={replayLastAssistantReply} disabled={!canReplayLastReply || phase === "thinking"} title={appCopy.replaySpeechTitle}>
+              <RotateCcw size={18} />
+              {appCopy.replaySpeech}
+            </Button>
+            <Button variant="outline" onClick={focusFollowUpInput} disabled={backendStatus !== "online"} title={appCopy.followUpTitle}>
+              <MessageCircle size={18} />
+              {appCopy.followUp}
             </Button>
             <Button variant="destructive" onClick={stopMedia} disabled={!stream} title={appCopy.endSessionTitle}>
               <CircleStop size={18} />
