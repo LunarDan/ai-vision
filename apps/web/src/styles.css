@@ -259,6 +259,14 @@ h2 {
   margin-top: 6px;
 }
 
+.message-context {
+  color: #5eead4;
+  display: block;
+  font-size: 12px;
+  line-height: 1.4;
+  margin-top: 10px;
+}
+
 .ui-badge {
   align-items: center;
   border: 1px solid rgba(148, 163, 184, 0.22);
@@ -329,6 +337,18 @@ h2 {
   display: flex;
   gap: 10px;
   padding: 12px 14px;
+}
+
+.status-alert.waiting {
+  background: rgba(234, 179, 8, 0.13);
+  border-color: rgba(234, 179, 8, 0.32);
+  color: #fde68a;
+}
+
+.status-alert.info {
+  background: rgba(20, 184, 166, 0.12);
+  border-color: rgba(45, 212, 191, 0.28);
+  color: #ccfbf1;
 }
 
 .scene-tabs {

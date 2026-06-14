@@ -24,6 +24,7 @@ import type {
   OmniServerEvent,
   SceneMode,
   SessionMetrics,
+  UsedVisionContext,
   VideoStreamFrame,
   VisionActionTimeline,
   VisionSummary,
@@ -77,6 +78,10 @@ type TimelineMessage = {
 type VisionContextSyncState = "idle" | "pending" | "synced" | "failed";
 type BackendStatus = "unknown" | "online" | "offline";
 type VideoStreamStatus = "idle" | "connecting" | "connected" | "fallback";
+type AssistantReplyPayload = {
+  reply: string;
+  usedVisionContext?: UsedVisionContext;
+};
 
 const sceneModeOptions = Object.entries(sceneModeCopy) as Array<
   [SceneMode, (typeof sceneModeCopy)[SceneMode]]
@@ -178,7 +183,7 @@ export const App = () => {
   const videoStreamSocketRef = useRef<WebSocket | null>(null);
   const videoStreamStatusRef = useRef<VideoStreamStatus>("idle");
   const videoStreamReplyResolverRef = useRef<
-    ((reply: string | null) => void) | null
+    ((reply: AssistantReplyPayload | null) => void) | null
   >(null);
   const lastVideoStreamErrorAtRef = useRef(0);
   const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
@@ -239,6 +244,15 @@ export const App = () => {
   const [visionContextSyncedAt, setVisionContextSyncedAt] = useState<
     string | null
   >(null);
+  const [visualContextFreshness, setVisualContextFreshness] = useState<
+    "fresh" | "stale" | "missing"
+  >("missing");
+  const [waitingForFreshVision, setWaitingForFreshVision] = useState(false);
+  const [replyContextTimestamp, setReplyContextTimestamp] = useState<
+    string | null
+  >(null);
+  const [replyGenerationId, setReplyGenerationId] = useState(0);
+  const [visionUpdatedDuringReply, setVisionUpdatedDuringReply] = useState(false);
   const [messages, setMessages] = useState<TimelineMessage[]>([
     { role: "assistant", content: appCopy.initialAssistantMessage },
   ]);
@@ -635,13 +649,25 @@ export const App = () => {
 
   const syncVisionContext = (
     snapshot: VisionSummary,
-    options: { silent?: boolean } = {},
+    options: { silent?: boolean; skipSocket?: boolean } = {},
   ) => {
-    void snapshot;
+    const socket = videoStreamSocketRef.current;
+    if (
+      !options.skipSocket &&
+      socket &&
+      socket.readyState === WebSocket.OPEN
+    ) {
+      socket.send(
+        JSON.stringify({
+          type: "vision_context",
+          snapshot,
+        }),
+      );
+    }
     setVisionContextSyncState("synced");
     setVisionContextSyncedAt(new Date().toISOString());
     if (!options.silent) {
-      appendSystemMessage(appCopy.visionContextSynced);
+      setVisionContextSyncState("synced");
     }
   };
 
@@ -685,12 +711,18 @@ export const App = () => {
         if (event.type === "video_summary") {
           setVisionSummary(event.snapshot);
           visionSummaryRef.current = event.snapshot;
-          syncVisionContext(event.snapshot, { silent: true });
+          syncVisionContext(event.snapshot, { silent: true, skipSocket: true });
+          if (phaseRef.current === "thinking" || phaseRef.current === "speaking") {
+            setVisionUpdatedDuringReply(true);
+          }
         }
         if (event.type === "action_timeline") {
           lastActionTimelineRef.current = event.timeline;
           setLastActionTimeline(event.timeline);
           setLastActionTimelineAt(event.timeline.createdAt);
+          if (phaseRef.current === "thinking" || phaseRef.current === "speaking") {
+            setVisionUpdatedDuringReply(true);
+          }
         }
         if (event.type === "video_status") {
           if (videoStreamStatusRef.current !== "connected") {
@@ -708,8 +740,15 @@ export const App = () => {
           }
           setLastVideoStreamAt(event.updatedAt);
         }
+        if (event.type === "vision_memory_status") {
+          setVisualContextFreshness(event.visualContextFreshness);
+          setWaitingForFreshVision(event.analyzing && phaseRef.current === "thinking");
+        }
         if (event.type === "text" && event.final) {
-          videoStreamReplyResolverRef.current?.(event.text);
+          videoStreamReplyResolverRef.current?.({
+            reply: event.text,
+            usedVisionContext: event.usedVisionContext,
+          });
           videoStreamReplyResolverRef.current = null;
         }
         if (event.type === "error") {
@@ -761,7 +800,7 @@ export const App = () => {
     const socket = videoStreamSocketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return null;
 
-    return new Promise<string | null>((resolve) => {
+    return new Promise<AssistantReplyPayload | null>((resolve) => {
       videoStreamReplyResolverRef.current?.(null);
       videoStreamReplyResolverRef.current = resolve;
       socket.send(JSON.stringify({ type: "text", text, sceneMode }));
@@ -1233,6 +1272,12 @@ export const App = () => {
 
   const askAssistant = async (text: string) => {
     setPhase("thinking");
+    setReplyGenerationId((id) => id + 1);
+    setVisionUpdatedDuringReply(false);
+    setWaitingForFreshVision(
+      videoStreamStatusRef.current === "connected" &&
+        (visualContextFreshness === "stale" || visualContextFreshness === "missing"),
+    );
 
     try {
       let currentVisionSummary = visionSummaryRef.current;
@@ -1241,7 +1286,6 @@ export const App = () => {
         videoReadyRef.current &&
         (isVisionContextStale(currentVisionSummary) || isVisualQuestion(text))
       ) {
-        appendSystemMessage(appCopy.autoVisionCaptureMessage);
         try {
           currentVisionSummary =
             (await analyzeCurrentFrame("visual-question")) ??
@@ -1262,10 +1306,12 @@ export const App = () => {
         }
       }
 
-      let reply =
+      let replyPayload =
         videoStreamStatusRef.current === "connected"
           ? await requestVideoStreamReply(text)
           : null;
+      let reply = replyPayload?.reply ?? null;
+      let usedVisionContext = replyPayload?.usedVisionContext;
 
       if (!reply) {
         const response = await fetch(`${apiBase}/conversation/respond`, {
@@ -1286,10 +1332,17 @@ export const App = () => {
 
         const data = (await response.json()) as ConversationResponse;
         reply = data.reply;
+        usedVisionContext = data.usedVisionContext;
       }
 
+      setReplyContextTimestamp(
+        usedVisionContext?.visionTimelineAt ??
+          usedVisionContext?.visionSummaryAt ??
+          null,
+      );
       appendAssistantMessage(reply);
       setPhase("speaking");
+      setWaitingForFreshVision(false);
       stopSpeechRecognition(false);
 
       if ("speechSynthesis" in window) {
@@ -1327,6 +1380,7 @@ export const App = () => {
       }
     } catch {
       setPhase("listening");
+      setWaitingForFreshVision(false);
       appendSystemMessage(appCopy.conversationError);
       resumeSpeechRecognition();
     }
@@ -1708,6 +1762,8 @@ export const App = () => {
     [appCopy.metricVisionRequests, metrics.visionRequests],
     [appCopy.metricActionSequenceRequests, actionSequenceRequestCount],
     [appCopy.metricStreamCloudAnalyses, videoStreamCloudAnalyses],
+    ["视觉新鲜度", visualContextFreshness],
+    ["回复序号", replyGenerationId],
   ];
   const streamMetrics = [
     [appCopy.metricAutoVisionRequests, autoVisionRequestCount],
@@ -1737,6 +1793,12 @@ export const App = () => {
       appCopy.metricLastVideoStreamAt,
       lastVideoStreamAt
         ? new Date(lastVideoStreamAt).toLocaleTimeString()
+        : appCopy.noAutoVisionYet,
+    ],
+    [
+      "本次回复上下文",
+      replyContextTimestamp
+        ? new Date(replyContextTimestamp).toLocaleTimeString()
         : appCopy.noAutoVisionYet,
     ],
     [appCopy.metricLastStreamError, lastVideoStreamError ?? appCopy.noAutoVisionYet],
@@ -1846,6 +1908,20 @@ export const App = () => {
           <Alert className="status-alert">
             <AlertTriangle size={16} />
             <span>{appCopy.backendOfflineMessage}</span>
+          </Alert>
+        ) : null}
+
+        {waitingForFreshVision ? (
+          <Alert className="status-alert waiting">
+            <Radio size={16} />
+            <span>正在等待最新视觉上下文，最多约 1.5 秒。</span>
+          </Alert>
+        ) : null}
+
+        {visionUpdatedDuringReply ? (
+          <Alert className="status-alert info">
+            <ScanEye size={16} />
+            <span>画面已更新，下一轮回答将使用最新视觉上下文。</span>
           </Alert>
         ) : null}
 

@@ -2,21 +2,35 @@ import { Injectable } from "@nestjs/common";
 import type { ConversationRequest, ConversationResponse } from "@ai-vision/shared";
 import { OpenaiService } from "../openai/openai.service.js";
 import { ConversationHistoryService } from "./conversation-history.service.js";
+import { VisionMemoryService } from "./vision-memory.service.js";
 
 @Injectable()
 export class ConversationService {
   constructor(
     private readonly openaiService: OpenaiService,
     private readonly historyService: ConversationHistoryService,
+    private readonly visionMemoryService: VisionMemoryService,
   ) {}
 
   async respond(request: ConversationRequest): Promise<ConversationResponse> {
+    const waitedForFreshVision =
+      await this.visionMemoryService.waitForFreshContext(request.sessionId);
+    const resolvedContext = this.visionMemoryService.resolveContext(
+      request.sessionId,
+      request,
+      waitedForFreshVision,
+    );
     const history = this.historyService.getHistory(request.sessionId);
-    const requestWithHistory = { ...request, history };
+    const requestWithHistory = {
+      ...request,
+      history,
+      visionSummary: resolvedContext.visionSummary,
+      visionTimeline: resolvedContext.visionTimeline,
+    };
     const reply = await this.openaiService.createConversationReply(requestWithHistory);
     const turnContext = {
-      visionSummary: request.visionSummary ?? null,
-      visionTimeline: request.visionTimeline ?? null,
+      visionSummary: resolvedContext.visionSummary,
+      visionTimeline: resolvedContext.visionTimeline,
     };
 
     this.historyService.recordUserTurn(
@@ -35,6 +49,7 @@ export class ConversationService {
       sessionId: request.sessionId,
       reply,
       createdAt: new Date().toISOString(),
+      usedVisionContext: resolvedContext.usedVisionContext,
     };
   }
 }

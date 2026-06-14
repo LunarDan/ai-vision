@@ -68,6 +68,13 @@ export interface ConversationHistoryItem {
   context?: ConversationTurnContext | null;
 }
 
+export interface UsedVisionContext {
+  visionSummaryAt?: string | null;
+  visionTimelineAt?: string | null;
+  waitedForFreshVision: boolean;
+  source: "server-memory" | "request-cache" | "none";
+}
+
 export interface VideoStreamFrame {
   id: string;
   imageBase64: string;
@@ -129,6 +136,7 @@ export type OmniServerEvent =
       type: "text";
       text: string;
       final?: boolean;
+      usedVisionContext?: UsedVisionContext;
     }
   | {
       type: "audio";
@@ -154,6 +162,14 @@ export type OmniServerEvent =
         lastError?: string | null;
         updatedAt: string;
       }
+  | {
+      type: "vision_memory_status";
+      visualContextFreshness: "fresh" | "stale" | "missing";
+      analyzing: boolean;
+      visionSummaryAt?: string | null;
+      visionTimelineAt?: string | null;
+      updatedAt: string;
+    }
   | {
       type: "error";
       message: string;
@@ -202,6 +218,7 @@ export interface ConversationResponse {
   sessionId: string;
   reply: string;
   createdAt: string;
+  usedVisionContext?: UsedVisionContext;
 }
 
 export interface ApiErrorResponse {
