@@ -11,6 +11,7 @@
   PhoneCall,
   Radio,
   ScanEye,
+  Send,
   Sparkles,
   Video,
   VideoOff,
@@ -18,6 +19,7 @@
   XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { FormEvent, KeyboardEvent } from "react";
 import type {
   AssistantPhase,
   ConversationResponse,
@@ -39,13 +41,6 @@ import {
   CardHeader,
   CardTitle,
 } from "./components/ui/card.js";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "./components/ui/select.js";
 import { Separator } from "./components/ui/separator.js";
 import { Switch } from "./components/ui/switch.js";
 import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs.js";
@@ -253,6 +248,7 @@ export const App = () => {
   >(null);
   const [replyGenerationId, setReplyGenerationId] = useState(0);
   const [visionUpdatedDuringReply, setVisionUpdatedDuringReply] = useState(false);
+  const [typedQuestion, setTypedQuestion] = useState("");
   const [messages, setMessages] = useState<TimelineMessage[]>([
     { role: "assistant", content: appCopy.initialAssistantMessage },
   ]);
@@ -646,6 +642,10 @@ export const App = () => {
       return false;
     }
   };
+
+  useEffect(() => {
+    void checkBackendHealth();
+  }, []);
 
   const syncVisionContext = (
     snapshot: VisionSummary,
@@ -1386,6 +1386,22 @@ export const App = () => {
     }
   };
 
+  const submitTypedQuestion = (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
+    const text = typedQuestion.trim();
+    if (!text || backendStatusRef.current !== "online" || phaseRef.current === "thinking") {
+      return;
+    }
+
+    clearSpeechFallbackTimer();
+    currentUtteranceRef.current = null;
+    window.speechSynthesis?.cancel();
+    stopSpeechRecognition(false);
+    appendMessage({ role: "user", content: text });
+    setTypedQuestion("");
+    void askAssistant(text);
+  };
+
   const startSpeechRecognition = () => {
     if (recognitionRef.current) return true;
 
@@ -1711,6 +1727,24 @@ export const App = () => {
   const prioritizeActionPanel =
     sceneMode === "action" || sceneMode === "interview";
   const isBackendOffline = backendStatus === "offline";
+  const typedQuestionText = typedQuestion.trim();
+  const canSubmitTypedQuestion =
+    backendStatus === "online" &&
+    phase !== "thinking" &&
+    typedQuestionText.length > 0;
+  const typedQuestionPlaceholder =
+    backendStatus === "online"
+      ? "输入问题，按 Enter 发送"
+      : backendStatus === "offline"
+        ? "后端离线，暂时无法发送"
+        : "正在检测后端服务...";
+  const handleTypedQuestionKeyDown = (
+    event: KeyboardEvent<HTMLTextAreaElement>,
+  ) => {
+    if (event.key !== "Enter" || event.shiftKey) return;
+    event.preventDefault();
+    submitTypedQuestion();
+  };
   const statusItems = [
     {
       label: cameraEnabled
@@ -1890,6 +1924,28 @@ export const App = () => {
             </div>
           ))}
         </div>
+
+        <form className="typed-question-form" onSubmit={submitTypedQuestion}>
+          <textarea
+            aria-label="输入文字问题"
+            className="typed-question-input"
+            disabled={backendStatus !== "online"}
+            onChange={(event) => setTypedQuestion(event.target.value)}
+            onKeyDown={handleTypedQuestionKeyDown}
+            placeholder={typedQuestionPlaceholder}
+            rows={3}
+            value={typedQuestion}
+          />
+          <Button
+            className="typed-question-submit"
+            disabled={!canSubmitTypedQuestion}
+            title="发送文字问题"
+            type="submit"
+          >
+            <Send size={17} />
+            发送
+          </Button>
+        </form>
       </aside>
 
       <section className="stage">
@@ -1982,27 +2038,6 @@ export const App = () => {
 
         <Card className="control-card">
           <CardContent className="controlbar">
-            <label className="device-select">
-              <span>{appCopy.cameraDeviceLabel}</span>
-              <Select
-                value={selectedCameraDeviceId}
-                onValueChange={(value) => {
-                  void switchCamera(value);
-                }}
-              >
-                <SelectTrigger disabled={cameraDevices.length === 0}>
-                  <SelectValue placeholder={appCopy.cameraDevicePlaceholder} />
-                </SelectTrigger>
-                <SelectContent>
-                  {cameraDevices.map((device, index) => (
-                    <SelectItem key={device.deviceId} value={device.deviceId}>
-                      {device.label || `${appCopy.unknownCamera} ${index + 1}`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </label>
-
             <Button onClick={startMedia} disabled={cameraEnabled} title={appCopy.connectTitle}>
               <PhoneCall size={18} />
               {appCopy.connect}

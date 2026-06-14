@@ -45,7 +45,8 @@ body {
 }
 
 button,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -265,6 +266,47 @@ h2 {
   font-size: 12px;
   line-height: 1.4;
   margin-top: 10px;
+}
+
+.typed-question-form {
+  background: rgba(2, 6, 23, 0.36);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+}
+
+.typed-question-input {
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  color: #f8fafc;
+  line-height: 1.5;
+  max-height: 140px;
+  min-height: 78px;
+  outline: 0;
+  padding: 10px 12px;
+  resize: vertical;
+  width: 100%;
+}
+
+.typed-question-input::placeholder {
+  color: #64748b;
+}
+
+.typed-question-input:focus-visible {
+  border-color: rgba(94, 234, 212, 0.56);
+  box-shadow: 0 0 0 2px rgba(94, 234, 212, 0.16);
+}
+
+.typed-question-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.typed-question-submit {
+  width: 100%;
 }
 
 .ui-badge {
