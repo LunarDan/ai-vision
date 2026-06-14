@@ -249,6 +249,7 @@ export const App = () => {
   const [replyGenerationId, setReplyGenerationId] = useState(0);
   const [visionUpdatedDuringReply, setVisionUpdatedDuringReply] = useState(false);
   const [typedQuestion, setTypedQuestion] = useState("");
+  const [debugPanelOpen, setDebugPanelOpen] = useState(false);
   const [messages, setMessages] = useState<TimelineMessage[]>([
     { role: "assistant", content: appCopy.initialAssistantMessage },
   ]);
@@ -1389,7 +1390,19 @@ export const App = () => {
   const submitTypedQuestion = (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
     const text = typedQuestion.trim();
-    if (!text || backendStatusRef.current !== "online" || phaseRef.current === "thinking") {
+    submitQuestionText(text, { clearTypedInput: true });
+  };
+
+  const submitQuestionText = (
+    text: string,
+    options: { clearTypedInput?: boolean } = {},
+  ) => {
+    const normalizedText = text.trim();
+    if (
+      !normalizedText ||
+      backendStatusRef.current !== "online" ||
+      phaseRef.current === "thinking"
+    ) {
       return;
     }
 
@@ -1397,9 +1410,11 @@ export const App = () => {
     currentUtteranceRef.current = null;
     window.speechSynthesis?.cancel();
     stopSpeechRecognition(false);
-    appendMessage({ role: "user", content: text });
-    setTypedQuestion("");
-    void askAssistant(text);
+    appendMessage({ role: "user", content: normalizedText });
+    if (options.clearTypedInput) {
+      setTypedQuestion("");
+    }
+    void askAssistant(normalizedText);
   };
 
   const startSpeechRecognition = () => {
@@ -1738,6 +1753,21 @@ export const App = () => {
       : backendStatus === "offline"
         ? "后端离线，暂时无法发送"
         : "正在检测后端服务...";
+  const observationText =
+    visionSummary?.summary ?? appCopy.noObservationYet;
+  const changeText =
+    lastActionTimeline?.summary ?? appCopy.noChangeYet;
+  const latestObservationAt = visionSummary
+    ? new Date(visionSummary.createdAt).toLocaleTimeString()
+    : appCopy.waitingFirstFrame;
+  const latestChangeAt = lastActionTimelineAt
+    ? new Date(lastActionTimelineAt).toLocaleTimeString()
+    : appCopy.waitingFirstFrame;
+  const costDebugSummary = [
+    `成本：${costLevel}`,
+    `跳过静止帧：${skippedFrameCount + dedupedActionFrameCount}`,
+    `云端分析：${videoStreamCloudAnalyses + actionSequenceRequestCount}`,
+  ].join(" · ");
   const handleTypedQuestionKeyDown = (
     event: KeyboardEvent<HTMLTextAreaElement>,
   ) => {
@@ -1837,19 +1867,15 @@ export const App = () => {
     ],
     [appCopy.metricLastStreamError, lastVideoStreamError ?? appCopy.noAutoVisionYet],
   ];
-  const VisionSummaryPanel = () => (
+  const ObservationPanel = () => (
     <Card className="context-card vision-card">
       <CardHeader>
-        <p className="eyebrow">{appCopy.visionSummaryLabel}</p>
+        <p className="eyebrow">{appCopy.observationTitle}</p>
         <CardTitle>{appCopy.currentViewTitle}</CardTitle>
-        <CardDescription>
-          {visionSummary
-            ? `${appCopy.updatedAt} ${new Date(visionSummary.createdAt).toLocaleTimeString()}`
-            : appCopy.waitingFirstFrame}
-        </CardDescription>
+        <CardDescription>{appCopy.updatedAt} {latestObservationAt}</CardDescription>
       </CardHeader>
       <CardContent>
-        <p className="summary">{visionSummary?.summary ?? appCopy.emptySummary}</p>
+        <p className="summary">{observationText}</p>
         <Badge className={`sync-status ${visionContextSyncState}`} variant="muted">
           {appCopy.visionContextSyncLabels[visionContextSyncState]}
           {visionContextSyncedAt
@@ -1859,21 +1885,15 @@ export const App = () => {
       </CardContent>
     </Card>
   );
-  const ActionTimelinePanel = () => (
+  const RecentChangePanel = () => (
     <Card className="context-card action-card">
       <CardHeader>
-        <p className="eyebrow">{appCopy.actionTimelineLabel}</p>
+        <p className="eyebrow">{appCopy.changeTitle}</p>
         <CardTitle>{appCopy.recentActionTitle}</CardTitle>
-        <CardDescription>
-          {lastActionTimelineAt
-            ? `${appCopy.updatedAt} ${new Date(lastActionTimelineAt).toLocaleTimeString()}`
-            : appCopy.waitingFirstFrame}
-        </CardDescription>
+        <CardDescription>{appCopy.updatedAt} {latestChangeAt}</CardDescription>
       </CardHeader>
       <CardContent>
-        <p className="summary">
-          {lastActionTimeline?.summary ?? appCopy.emptyActionTimeline}
-        </p>
+        <p className="summary">{changeText}</p>
         {lastActionTimeline?.steps.length ? (
           <ul className="action-steps">
             {lastActionTimeline.steps.map((step) => (
@@ -2079,7 +2099,7 @@ export const App = () => {
       <aside className={`inspector ${prioritizeActionPanel ? "prioritize-action" : ""}`}>
         <Card className="scene-panel">
           <CardHeader>
-            <p className="eyebrow">Scene Mode</p>
+            <p className="eyebrow">{appCopy.assistantPanelLabel}</p>
             <CardTitle>{sceneModeProfile.label}</CardTitle>
             <CardDescription>{sceneModeProfile.description}</CardDescription>
           </CardHeader>
@@ -2089,9 +2109,26 @@ export const App = () => {
                 <Badge key={item} variant="success">{item}</Badge>
               ))}
             </div>
-            <ul className="scene-examples">
+            <p className="panel-section-title">{appCopy.demoQuestionsTitle}</p>
+            <div className="quick-question-list">
               {sceneModeProfile.examples.map((example) => (
-                <li key={example}>{example}</li>
+                <Button
+                  key={example}
+                  disabled={backendStatus !== "online" || phase === "thinking"}
+                  onClick={() => submitQuestionText(example)}
+                  title={appCopy.askQuestionTitle}
+                  type="button"
+                  variant="outline"
+                >
+                  {example}
+                </Button>
+              ))}
+            </div>
+            <Separator />
+            <p className="panel-section-title">{appCopy.nextStepsTitle}</p>
+            <ul className="scene-examples">
+              {sceneModeProfile.nextSteps.map((step) => (
+                <li key={step}>{step}</li>
               ))}
             </ul>
           </CardContent>
@@ -2099,67 +2136,76 @@ export const App = () => {
 
         {prioritizeActionPanel ? (
           <>
-            <ActionTimelinePanel />
-            <VisionSummaryPanel />
+            <RecentChangePanel />
+            <ObservationPanel />
           </>
         ) : (
           <>
-            <VisionSummaryPanel />
-            <ActionTimelinePanel />
+            <ObservationPanel />
+            <RecentChangePanel />
           </>
         )}
 
         <Card className="metrics-panel">
           <CardHeader>
             <p className="eyebrow">Runtime</p>
-            <CardTitle>成本与流状态</CardTitle>
-            <CardDescription>本地采样不等于云端调用，云端只处理去重后的关键帧。</CardDescription>
+            <CardTitle>{appCopy.costDebugTitle}</CardTitle>
+            <CardDescription>
+              {debugPanelOpen ? appCopy.costDebugExpanded : appCopy.costDebugCollapsed}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="metric-grid primary">
-              {primaryMetrics.map(([label, value]) => (
-                <div key={label}>
-                  <span>{label}</span>
-                  <strong>{value}</strong>
-                </div>
-              ))}
+            <div className="cost-summary">
+              <Badge variant="success">{costDebugSummary}</Badge>
+              <Button
+                onClick={() => setDebugPanelOpen((value) => !value)}
+                type="button"
+                variant="ghost"
+              >
+                {debugPanelOpen ? appCopy.hideDebug : appCopy.showDebug}
+              </Button>
             </div>
-            <Separator />
-            <div className="metric-list">
-              {streamMetrics.map(([label, value]) => (
-                <div key={label}>
-                  <span>{label}</span>
-                  <strong>{value}</strong>
+            {debugPanelOpen ? (
+              <>
+                <div className="metric-grid primary">
+                  {primaryMetrics.map(([label, value]) => (
+                    <div key={label}>
+                      <span>{label}</span>
+                      <strong>{value}</strong>
+                    </div>
+                  ))}
                 </div>
-              ))}
-              <div>
-                <span>{appCopy.metricFrameFingerprint}</span>
-                <strong>{lastFrameFingerprint ? appCopy.fingerprintReady : appCopy.fingerprintPending}</strong>
-              </div>
-            </div>
-            <Separator />
-            <div className="metric-list compact">
-              {lastUpdatedItems.map(([label, value]) => (
-                <div key={label}>
-                  <span>{label}</span>
-                  <strong>{value}</strong>
+                <Separator />
+                <div className="metric-list">
+                  {streamMetrics.map(([label, value]) => (
+                    <div key={label}>
+                      <span>{label}</span>
+                      <strong>{value}</strong>
+                    </div>
+                  ))}
+                  <div>
+                    <span>{appCopy.metricFrameFingerprint}</span>
+                    <strong>{lastFrameFingerprint ? appCopy.fingerprintReady : appCopy.fingerprintPending}</strong>
+                  </div>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <p className="eyebrow">{appCopy.costStrategyLabel}</p>
-            <CardTitle>端云协同策略</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="strategy-list">
-              {appCopy.strategies.map((strategy) => (
-                <li key={strategy}>{strategy}</li>
-              ))}
-            </ul>
+                <Separator />
+                <div className="metric-list compact">
+                  {lastUpdatedItems.map(([label, value]) => (
+                    <div key={label}>
+                      <span>{label}</span>
+                      <strong>{value}</strong>
+                    </div>
+                  ))}
+                </div>
+                <Separator />
+                <p className="panel-section-title">{appCopy.costStrategyLabel}</p>
+                <ul className="strategy-list">
+                  {appCopy.strategies.map((strategy) => (
+                    <li key={strategy}>{strategy}</li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
           </CardContent>
         </Card>
       </aside>
