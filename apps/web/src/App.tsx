@@ -5,7 +5,6 @@
   CheckCircle2,
   CircleStop,
   Eye,
-  EyeOff,
   Mic,
   MicOff,
   PhoneCall,
@@ -51,7 +50,6 @@ import {
   CardTitle,
 } from "./components/ui/card.js";
 import { Separator } from "./components/ui/separator.js";
-import { Switch } from "./components/ui/switch.js";
 import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs.js";
 import { appCopy, phaseLabels, sceneModeCopy } from "./copy.js";
 
@@ -75,7 +73,11 @@ const actionFrameQuality = 0.5;
 const actionQuestionBurstFrames = 6;
 const customSceneModesStorageKey = "ai-vision.customSceneModes.v1";
 const selectedCustomSceneModeStorageKey = "ai-vision.selectedCustomSceneMode.v1";
+const speechRateStorageKey = "ai-vision.speechRate.v1";
 const maxCustomSceneModes = 5;
+const minSpeechRate = 0.5;
+const maxSpeechRate = 3;
+const defaultSpeechRate = 1;
 
 type TimelineMessage = {
   id: string;
@@ -117,6 +119,16 @@ const createEmptyCustomModeDraft = (): CustomSceneModeDraft => ({
 
 const trimText = (value: string, maxLength: number) =>
   value.trim().slice(0, maxLength);
+
+const clampSpeechRate = (value: number) =>
+  Math.min(maxSpeechRate, Math.max(minSpeechRate, value));
+
+const parseStoredSpeechRate = () => {
+  const storedRate = Number(window.localStorage.getItem(speechRateStorageKey));
+  return Number.isFinite(storedRate)
+    ? clampSpeechRate(storedRate)
+    : defaultSpeechRate;
+};
 
 const normalizeList = (items: string[]) =>
   items
@@ -332,8 +344,7 @@ export const App = () => {
   const [replyGenerationId, setReplyGenerationId] = useState(0);
   const [visionUpdatedDuringReply, setVisionUpdatedDuringReply] = useState(false);
   const [typedQuestion, setTypedQuestion] = useState("");
-  const [typedQuestionPlaceholderOverride, setTypedQuestionPlaceholderOverride] =
-    useState<string | null>(null);
+  const [speechRate, setSpeechRate] = useState(() => parseStoredSpeechRate());
   const [lastAssistantReply, setLastAssistantReply] = useState("");
   const [lastHeardText, setLastHeardText] = useState("");
   const [voiceStatusHint, setVoiceStatusHint] = useState<string>(
@@ -363,6 +374,10 @@ export const App = () => {
   useEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
+
+  useEffect(() => {
+    window.localStorage.setItem(speechRateStorageKey, speechRate.toFixed(1));
+  }, [speechRate]);
 
   useEffect(() => {
     if (lastHeardText && (phase === "thinking" || phase === "speaking")) {
@@ -693,6 +708,7 @@ export const App = () => {
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "zh-CN";
+    utterance.rate = speechRate;
     currentUtteranceRef.current = utterance;
     let speechFinished = false;
     const resumeAfterSpeech = () => {
@@ -715,11 +731,6 @@ export const App = () => {
   const replayLastAssistantReply = () => {
     if (!lastAssistantReply.trim()) return;
     speakAssistantText(lastAssistantReply);
-  };
-
-  const focusFollowUpInput = () => {
-    setTypedQuestionPlaceholderOverride(appCopy.followUpPlaceholder);
-    typedQuestionInputRef.current?.focus();
   };
 
   const selectedCustomSceneMode =
@@ -1878,7 +1889,6 @@ export const App = () => {
     appendMessage({ role: "user", content: normalizedText });
     if (options.clearTypedInput) {
       setTypedQuestion("");
-      setTypedQuestionPlaceholderOverride(null);
     }
     void askAssistant(normalizedText);
   };
@@ -2237,12 +2247,11 @@ export const App = () => {
     phase !== "thinking" &&
     typedQuestionText.length > 0;
   const typedQuestionPlaceholder =
-    typedQuestionPlaceholderOverride ??
-    (backendStatus === "online"
+    backendStatus === "online"
       ? "输入问题，按 Enter 发送"
       : backendStatus === "offline"
         ? "后端离线，暂时无法发送"
-        : "正在检测后端服务...");
+        : "正在检测后端服务...";
   const voiceStatusLabel =
     phase === "listening"
       ? appCopy.voiceStatusListening
@@ -2620,16 +2629,6 @@ export const App = () => {
               {cameraEnabled ? <Video size={18} /> : <VideoOff size={18} />}
               {appCopy.toggleCamera}
             </Button>
-            <div className="switch-control">
-              {autoObserveEnabled ? <Eye size={17} /> : <EyeOff size={17} />}
-              <span>{appCopy.autoObserve}</span>
-              <Switch
-                checked={autoObserveEnabled}
-                disabled={!stream}
-                title={appCopy.autoObserveTitle}
-                onCheckedChange={() => setAutoObserveEnabled((value) => !value)}
-              />
-            </div>
             <Button variant="outline" onClick={analyzeFrame} disabled={!cameraEnabled} title={appCopy.analyzeFrameTitle}>
               <ScanEye size={18} />
               {appCopy.analyzeFrame}
@@ -2642,14 +2641,27 @@ export const App = () => {
               <RotateCcw size={18} />
               {appCopy.replaySpeech}
             </Button>
-            <Button variant="outline" onClick={focusFollowUpInput} disabled={backendStatus !== "online"} title={appCopy.followUpTitle}>
-              <MessageCircle size={18} />
-              {appCopy.followUp}
-            </Button>
             <Button variant="destructive" onClick={stopMedia} disabled={!stream} title={appCopy.endSessionTitle}>
               <CircleStop size={18} />
               {appCopy.endSession}
             </Button>
+            <label className="speech-rate-control" title={appCopy.speechRateTitle}>
+              <span>
+                {appCopy.speechRateLabel}
+                <strong>{speechRate.toFixed(1)}x</strong>
+              </span>
+              <input
+                aria-label={appCopy.speechRateTitle}
+                max={maxSpeechRate}
+                min={minSpeechRate}
+                onChange={(event) =>
+                  setSpeechRate(clampSpeechRate(Number(event.target.value)))
+                }
+                step={0.1}
+                type="range"
+                value={speechRate}
+              />
+            </label>
           </CardContent>
         </Card>
       </section>

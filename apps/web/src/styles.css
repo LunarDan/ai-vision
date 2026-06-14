@@ -102,8 +102,7 @@ textarea {
 .topbar,
 .controlbar,
 .video-status-rail,
-.scene-tags,
-.switch-control {
+.scene-tags {
   align-items: center;
   display: flex;
 }
@@ -877,8 +876,7 @@ video {
 }
 
 .ui-button:focus-visible,
-.ui-select-trigger:focus-visible,
-.ui-switch:focus-visible {
+.ui-select-trigger:focus-visible {
   outline: 2px solid #5eead4;
   outline-offset: 2px;
 }
@@ -896,7 +894,7 @@ video {
 }
 
 .device-select > span,
-.switch-control span {
+.speech-rate-control span {
   color: #94a3b8;
   font-size: 12px;
   font-weight: 800;
@@ -946,42 +944,40 @@ video {
   right: 10px;
 }
 
-.switch-control {
+.speech-rate-control {
+  align-items: center;
   background: rgba(15, 23, 42, 0.75);
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 8px;
-  gap: 8px;
+  display: inline-flex;
+  gap: 10px;
   min-height: 40px;
-  padding: 0 10px;
+  min-width: 180px;
+  padding: 0 12px;
 }
 
-.ui-switch {
-  background: #334155;
-  border: 0;
-  border-radius: 999px;
+.speech-rate-control span {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.speech-rate-control strong {
+  color: #f8fafc;
+  font-size: 12px;
+}
+
+.speech-rate-control input {
+  accent-color: #22c55e;
   cursor: pointer;
-  height: 22px;
-  padding: 2px;
-  position: relative;
-  width: 40px;
+  flex: 1 1 auto;
+  min-width: 90px;
 }
 
-.ui-switch[data-state="checked"] {
-  background: #22c55e;
-}
-
-.ui-switch-thumb {
-  background: #f8fafc;
-  border-radius: 999px;
-  display: block;
-  height: 18px;
-  transform: translateX(0);
-  transition: transform 180ms ease;
-  width: 18px;
-}
-
-.ui-switch[data-state="checked"] .ui-switch-thumb {
-  transform: translateX(18px);
+.speech-rate-control:focus-within {
+  border-color: rgba(94, 234, 212, 0.58);
+  box-shadow: 0 0 0 2px rgba(94, 234, 212, 0.16);
 }
 
 .scene-tags {
@@ -1319,8 +1315,12 @@ video {
 
   .ui-button,
   .ui-select-trigger,
-  .switch-control {
+  .speech-rate-control {
     width: 100%;
+  }
+
+  .speech-rate-control {
+    min-width: 0;
   }
 
   .camera-diagnostics {
