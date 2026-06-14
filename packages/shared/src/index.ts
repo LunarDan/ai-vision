@@ -221,6 +221,26 @@ export interface ConversationResponse {
   usedVisionContext?: UsedVisionContext;
 }
 
+export type ConversationStreamEvent =
+  | {
+      type: "meta";
+      usedVisionContext?: UsedVisionContext;
+    }
+  | {
+      type: "delta";
+      text: string;
+    }
+  | {
+      type: "done";
+      reply: string;
+      createdAt: string;
+      usedVisionContext?: UsedVisionContext;
+    }
+  | {
+      type: "error";
+      message: string;
+    };
+
 export interface ApiErrorResponse {
   message: string;
   code: string;
