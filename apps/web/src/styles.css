@@ -51,6 +51,18 @@ textarea {
   font: inherit;
 }
 
+.sr-only {
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
 .shell {
   background:
     radial-gradient(circle at 48% -10%, rgba(34, 197, 94, 0.18), transparent 34%),
@@ -125,6 +137,21 @@ textarea {
 .topbar {
   justify-content: space-between;
   gap: 14px;
+}
+
+.topbar-actions {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 10px;
+}
+
+.theme-toggle {
+  flex: 0 0 auto;
+  height: 40px;
+  min-width: 0;
+  padding: 0;
+  width: 40px;
 }
 
 .eyebrow {
@@ -735,6 +762,263 @@ h2 {
   font-weight: 800;
 }
 
+.shell.light {
+  background:
+    radial-gradient(circle at 48% -10%, rgba(34, 197, 94, 0.14), transparent 34%),
+    radial-gradient(circle at 82% 12%, rgba(14, 165, 233, 0.12), transparent 30%),
+    #f8fafc;
+  color: #020617;
+}
+
+.shell.light .sidebar,
+.shell.light .inspector {
+  background: rgba(255, 255, 255, 0.88);
+  border-color: #dbe3ee;
+}
+
+.shell.light .ui-card {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: #d7e0ea;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+}
+
+.shell.light h1,
+.shell.light h2,
+.shell.light .ui-card-title,
+.shell.light .history-toggle strong,
+.shell.light .history-card-header strong,
+.shell.light .session-card strong,
+.shell.light .voice-status-card strong,
+.shell.light .empty-video strong,
+.shell.light .panel-section-title,
+.shell.light .speech-rate-control strong,
+.shell.light .history-item strong,
+.shell.light .history-meta span {
+  color: #0f172a;
+}
+
+.shell.light .eyebrow,
+.shell.light .session-card p,
+.shell.light .history-toggle-action,
+.shell.light .message-context {
+  color: #047857;
+}
+
+.shell.light .ui-card-description,
+.shell.light .session-card span,
+.shell.light .message span,
+.shell.light .metric-grid span,
+.shell.light .metric-list span,
+.shell.light .confidence-note,
+.shell.light .history-toggle small,
+.shell.light .history-card-header span,
+.shell.light .history-item span,
+.shell.light .history-empty,
+.shell.light .voice-status-card span,
+.shell.light .device-select > span,
+.shell.light .speech-rate-control span,
+.shell.light .camera-diagnostics span,
+.shell.light .empty-video,
+.shell.light .history-modal-header span {
+  color: #475569;
+}
+
+.shell.light .history-toggle,
+.shell.light .typed-question-form,
+.shell.light .speech-rate-control {
+  background: rgba(248, 250, 252, 0.86);
+  border-color: #d7e0ea;
+}
+
+.shell.light .history-toggle:hover,
+.shell.light .history-toggle:focus-visible {
+  background: #ffffff;
+  outline-color: rgba(4, 120, 87, 0.32);
+}
+
+.shell.light .history-toggle-icon,
+.shell.light .voice-status-icon {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(22, 163, 74, 0.28);
+  color: #047857;
+}
+
+.shell.light .message,
+.shell.light .history-item,
+.shell.light .history-detail-media,
+.shell.light .history-meta span {
+  background: rgba(255, 255, 255, 0.88);
+  border-color: #d7e0ea;
+}
+
+.shell.light .message.user {
+  background: rgba(220, 252, 231, 0.72);
+  border-color: rgba(34, 197, 94, 0.28);
+}
+
+.shell.light .message p,
+.shell.light .typed-question-input,
+.shell.light .ui-select-trigger,
+.shell.light .ui-select-content,
+.shell.light .ui-button-outline,
+.shell.light .ui-button-ghost {
+  color: #0f172a;
+}
+
+.shell.light .typed-question-input,
+.shell.light .ui-select-trigger,
+.shell.light .ui-select-content {
+  background: #ffffff;
+  border-color: #cbd5e1;
+}
+
+.shell.light .typed-question-input::placeholder {
+  color: #64748b;
+}
+
+.shell.light .ui-badge {
+  background: rgba(255, 255, 255, 0.76);
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+
+.shell.light .ui-badge-success,
+.shell.light .status.listening,
+.shell.light .status.speaking {
+  background: rgba(220, 252, 231, 0.9);
+  border-color: rgba(34, 197, 94, 0.36);
+  color: #166534;
+}
+
+.shell.light .ui-badge-warning,
+.shell.light .status.thinking,
+.shell.light .status.connecting,
+.shell.light .status-alert.waiting {
+  background: rgba(254, 249, 195, 0.92);
+  border-color: rgba(234, 179, 8, 0.42);
+  color: #854d0e;
+}
+
+.shell.light .ui-badge-danger,
+.shell.light .status.error,
+.shell.light .status-alert {
+  background: rgba(254, 226, 226, 0.94);
+  border-color: rgba(248, 113, 113, 0.42);
+  color: #991b1b;
+}
+
+.shell.light .ui-badge-muted {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.shell.light .status-alert.info {
+  background: rgba(204, 251, 241, 0.9);
+  border-color: rgba(20, 184, 166, 0.34);
+  color: #0f766e;
+}
+
+.shell.light .voice-status-card {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(34, 197, 94, 0.24);
+}
+
+.shell.light .voice-status-card.thinking .voice-status-icon {
+  background: rgba(254, 249, 195, 0.9);
+  border-color: rgba(234, 179, 8, 0.38);
+  color: #854d0e;
+}
+
+.shell.light .voice-status-card.speaking .voice-status-icon {
+  background: rgba(204, 251, 241, 0.9);
+  border-color: rgba(20, 184, 166, 0.34);
+  color: #0f766e;
+}
+
+.shell.light .voice-status-card.error .voice-status-icon {
+  background: rgba(254, 226, 226, 0.92);
+  border-color: rgba(248, 113, 113, 0.38);
+  color: #991b1b;
+}
+
+.shell.light .ui-tabs-list,
+.shell.light .speech-rate-control,
+.shell.light .control-card .ui-card-content {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: #d7e0ea;
+}
+
+.shell.light .ui-tabs-trigger {
+  color: #475569;
+}
+
+.shell.light .ui-tabs-trigger:hover,
+.shell.light .ui-tabs-trigger:focus-visible {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.shell.light .ui-button-secondary {
+  background: #e2e8f0;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+
+.shell.light .ui-button-outline {
+  background: rgba(255, 255, 255, 0.74);
+  border-color: #cbd5e1;
+}
+
+.shell.light .ui-button-ghost {
+  background: transparent;
+}
+
+.shell.light .ui-button:hover:not(:disabled),
+.shell.light .ui-select-trigger:hover:not(:disabled) {
+  border-color: rgba(4, 120, 87, 0.42);
+}
+
+.shell.light .video-wrap {
+  background:
+    linear-gradient(180deg, rgba(226, 232, 240, 0.45), rgba(248, 250, 252, 0.18)),
+    #e2e8f0;
+  border-color: #cbd5e1;
+}
+
+.shell.light .empty-video {
+  color: #475569;
+}
+
+.shell.light .camera-diagnostics {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+
+.shell.light .history-overlay {
+  background: rgba(15, 23, 42, 0.36);
+}
+
+.shell.light .history-modal {
+  border-color: rgba(4, 120, 87, 0.22);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
+}
+
+.shell.light .history-modal-header {
+  border-color: #d7e0ea;
+}
+
+.shell.light .history-frame {
+  background: #f1f5f9;
+  border-color: #d7e0ea;
+  color: #475569;
+}
+
+.shell.light .timeline::-webkit-scrollbar-thumb,
+.shell.light .inspector::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+
 .video-wrap {
   align-items: center;
   background:
@@ -1192,6 +1476,49 @@ video {
   width: 100%;
 }
 
+.shell.light .scene-examples,
+.shell.light .strategy-list,
+.shell.light .summary,
+.shell.light .action-steps {
+  color: #1e293b;
+}
+
+.shell.light .custom-mode-empty,
+.shell.light .custom-mode-hint {
+  color: #475569;
+}
+
+.shell.light .custom-mode-tools label {
+  color: #334155;
+}
+
+.shell.light .custom-mode-input,
+.shell.light .custom-mode-textarea {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+
+.shell.light .action-steps li,
+.shell.light .metric-grid div,
+.shell.light .metric-list div {
+  background: rgba(255, 255, 255, 0.82);
+  border-color: #d7e0ea;
+}
+
+.shell.light .action-steps span {
+  color: #047857;
+}
+
+.shell.light .metric-grid strong,
+.shell.light .metric-list strong {
+  color: #0f172a;
+}
+
+.shell.light .ui-separator {
+  background: #d7e0ea;
+}
+
 @media (max-width: 1280px) {
   .shell {
     grid-template-columns: 280px minmax(420px, 1fr) 330px;
@@ -1287,6 +1614,19 @@ video {
   .topbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .topbar-actions {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .topbar-actions .status {
+    flex: 1 1 140px;
+  }
+
+  .theme-toggle {
+    flex: 0 0 40px;
   }
 
   .ui-tabs-list,
