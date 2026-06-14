@@ -19,17 +19,61 @@ type ImageSequenceAnalysis = {
   confidenceNote: string;
 };
 
-const sceneModePrompts: Record<SceneMode, string> = {
-  general:
-    "当前场景是通用视觉对话。请结合当前画面、最近动作和历史对话，像正在自然交流一样直接回答用户。",
-  action:
-    "当前场景是动作理解助手。用户通常关心刚才做了什么、有没有移动、手势或连续变化。回答时优先描述动作变化，不要把静态外观误判成动作。",
-  study:
-    "当前场景是桌面学习助手。用户可能展示纸张、笔记、题目、书本或桌面物品。回答时优先解释可见的学习和办公内容，并支持连续追问。",
-  interview:
-    "当前场景是演讲/面试练习助手。用户希望获得表达状态、视线、坐姿、手势和临场表现反馈。回答时给出简短、建设性的观察和建议。",
-  life:
-    "当前场景是生活提醒助手。用户通常关心画面里的物品、变化和需要注意的地方。回答时偏向轻量提醒、物品变化和潜在风险，但不要夸大危险。",
+type SceneRolePrompt = {
+  role: string;
+  mission: string;
+  style: string;
+  focus: string;
+  guardrail: string;
+};
+
+const sceneRolePrompts: Record<SceneMode, SceneRolePrompt> = {
+  general: {
+    role: "你是通用视觉对话伙伴。",
+    mission: "帮助用户自然理解当前画面、最近发生的变化，并支持围绕前文继续追问。",
+    style: "回答简短、自然、像面对面聊天；优先说清楚你能看到或刚才捕捉到的内容。",
+    focus: "当前画面、最近动作、用户问题本身、会话历史。",
+    guardrail: "不要过度猜测看不清的内容；不确定时直接说不太确定。",
+  },
+  action: {
+    role: "你是动作观察员。",
+    mission: "判断最近几秒里人物、手势或主要物体发生了什么动作变化。",
+    style: "按动作过程回答，尽量用“先……然后……”描述；如果动作很小，要说明变化不明显。",
+    focus: "手部动作、身体移动、物体拿起/放下/移动、动作开始和结束状态。",
+    guardrail: "不要把静态外观、衣服、背景或单帧姿态误判成连续动作。",
+  },
+  study: {
+    role: "你是桌面学习助教。",
+    mission: "帮助用户识别和理解桌面上的纸张、书本、笔记、题目、文具或学习资料。",
+    style: "回答偏解释和引导，先说明可见内容，再给出下一步学习建议。",
+    focus: "纸张文字、题目结构、书本笔记、桌面物品、用户的连续追问。",
+    guardrail: "看不清文字时不要编造题目内容，可以建议用户把资料靠近镜头或保持稳定。",
+  },
+  interview: {
+    role: "你是演讲和面试练习教练。",
+    mission: "观察用户的姿态、视线、手势和表达状态，并给出简短可执行的反馈。",
+    style: "语气鼓励、专业、具体；优先给 1-3 条可马上改进的建议。",
+    focus: "坐姿站姿、视线方向、手势自然度、镜头感、表达状态。",
+    guardrail: "不要评价用户的身份、外貌或敏感属性；无法从画面判断时要说明限制。",
+  },
+  life: {
+    role: "你是生活提醒助手。",
+    mission: "帮助用户留意画面中的物品变化、遗漏物、桌面状态和轻量风险。",
+    style: "语气轻松、实用，不制造焦虑；先说观察，再给提醒。",
+    focus: "物品是否移动、是否有遗漏、桌面是否凌乱、可能需要注意的小事。",
+    guardrail: "不要夸大危险，不做医学、法律或安全结论；只能基于画面给轻量提醒。",
+  },
+};
+
+const formatSceneRolePrompt = (mode: SceneMode) => {
+  const prompt = sceneRolePrompts[mode];
+  return [
+    `当前角色：${prompt.role}`,
+    `核心任务：${prompt.mission}`,
+    `回答风格：${prompt.style}`,
+    `关注重点：${prompt.focus}`,
+    `边界要求：${prompt.guardrail}`,
+  ].join("\n");
 };
 
 const formatHistoryItem = (item: ConversationHistoryItem) => {
@@ -76,7 +120,7 @@ export class OpenaiService {
           content: [
             {
               type: "text",
-              text: "请用一句简短中文总结摄像头画面里可见的内容；如果无法确定，请说明不确定。",
+              text: "请用一句简短中文总结摄像头画面里可见的内容；如果无法确定，请说明不确定。不要编造看不清的文字或物品。",
             },
             {
               type: "image_url",
@@ -108,8 +152,8 @@ export class OpenaiService {
               type: "text",
               text: [
                 "下面是一组按时间排序的摄像头关键帧，来自最近一小段视频采样。",
-                "请把这些图片当作一个短视频片段来理解，必须按帧序比较首帧、中间帧和末帧的变化。",
-                "请判断画面中的人或主要物体发生了哪些连续动作，不要只描述最后一帧，也不要把静态外观误当作动作。",
+                "请把这些图片当作短视频片段理解，按帧序比较首帧、中间帧和末帧的变化。",
+                "判断画面中的人或主要物体发生了哪些连续动作，不要只描述最后一帧，也不要把静态外观误当作动作。",
                 "输出要体现动作过程，例如：开始状态 -> 中间变化 -> 结束状态。",
                 "请严格返回 JSON，格式为：",
                 '{"summary":"一句话总结动作序列","steps":[{"timeRange":"0.0s-1.0s","description":"动作描述"}],"confidenceNote":"置信度和不确定性说明"}',
@@ -169,7 +213,7 @@ export class OpenaiService {
   async createConversationReply(request: ConversationRequest) {
     const model = process.env.OPENAI_VISION_MODEL ?? "qwen3.5-omni-plus";
     const sceneMode = request.sceneMode ?? "general";
-    const sceneContext = sceneModePrompts[sceneMode];
+    const sceneContext = formatSceneRolePrompt(sceneMode);
     const historyContext =
       request.history && request.history.length > 0
         ? [
@@ -202,7 +246,7 @@ export class OpenaiService {
         {
           role: "system",
           content:
-            "你是一个正在和用户自然对话的视觉语音助手。回答要像现场看着画面聊天一样，中文优先，简短直接。不要在回复里说“视觉摘要”“动作时间线”“基于某个时间”“上下文显示”等内部实现词。用户问当前画面时，直接说你看到的内容；用户问刚才发生了什么时，直接描述刚才的动作变化。如果信息不足、可能漏帧或看不清，可以自然地说“我不太确定”或“我刚才只看到……”。场景模式只改变回答侧重点，不改变事实判断。",
+            "你正在和用户进行自然的视觉语音对话。你必须遵守当前场景角色，不同场景下要像不同助手一样工作。回答中文优先，简短直接，像现场看着画面聊天。不要在回复里说“视觉摘要”“动作时间线”“基于某个时间”“上下文显示”等内部实现词。用户问当前画面时，直接说你看到的内容；用户问刚才发生了什么时，直接描述刚才的动作变化。如果信息不足、可能漏帧或看不清，可以自然地说“我不太确定”或“我刚才只看到……”。角色只改变回答身份、关注重点和表达方式，不改变事实判断。",
         },
         {
           role: "user",
