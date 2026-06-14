@@ -94,6 +94,10 @@ type AssistantReplyPayload = {
 const sceneModeOptions = Object.entries(sceneModeCopy) as Array<
   [BuiltInSceneMode, (typeof sceneModeCopy)[BuiltInSceneMode]]
 >;
+const normalizeSceneMode = (value: string): SceneMode =>
+  value === "custom" || value in sceneModeCopy
+    ? (value as SceneMode)
+    : "general";
 
 type CustomSceneModeDraft = Omit<CustomSceneModeProfile, "id"> & {
   id?: string;
@@ -2204,12 +2208,13 @@ export const App = () => {
     examples: [],
     nextSteps: [appCopy.customModeEmptyDescription],
   };
+  const safeSceneMode = normalizeSceneMode(sceneMode);
   const sceneModeProfile =
-    sceneMode === "custom"
+    safeSceneMode === "custom"
       ? (selectedCustomSceneMode ?? fallbackCustomSceneProfile)
-      : sceneModeCopy[sceneMode];
+      : sceneModeCopy[safeSceneMode];
   const prioritizeActionPanel =
-    sceneMode === "action" || sceneMode === "interview";
+    safeSceneMode === "action" || safeSceneMode === "interview";
   const isBackendOffline = backendStatus === "offline";
   const typedQuestionText = typedQuestion.trim();
   const canSubmitTypedQuestion =
@@ -2531,7 +2536,7 @@ export const App = () => {
         <Tabs
           className="scene-tabs"
           value={sceneMode}
-          onValueChange={(value) => setSceneMode(value as SceneMode)}
+          onValueChange={(value) => setSceneMode(normalizeSceneMode(value))}
         >
           <TabsList>
             {sceneModeOptions.map(([mode, profile]) => (
