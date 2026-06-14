@@ -31,6 +31,9 @@ import type {
   CustomSceneModeProfile,
   OmniServerEvent,
   SceneMode,
+  SessionFinalFrameUrlResponse,
+  SessionHistoryDetail,
+  SessionHistoryListItem,
   SessionMetrics,
   UsedVisionContext,
   VideoStreamFrame,
@@ -254,7 +257,7 @@ export const App = () => {
     null,
   );
   const [phase, setPhase] = useState<AssistantPhase>("idle");
-  const [sessionId] = useState(() => crypto.randomUUID());
+  const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
   const [sceneMode, setSceneMode] = useState<SceneMode>("general");
   const [customSceneModes, setCustomSceneModes] = useState<
     CustomSceneModeProfile[]
@@ -332,6 +335,17 @@ export const App = () => {
   const [voiceStatusHint, setVoiceStatusHint] = useState<string>(
     appCopy.voiceHintIdle,
   );
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [sessionHistory, setSessionHistory] = useState<SessionHistoryListItem[]>(
+    [],
+  );
+  const [selectedHistory, setSelectedHistory] =
+    useState<SessionHistoryDetail | null>(null);
+  const [selectedHistoryFrameUrl, setSelectedHistoryFrameUrl] = useState<
+    string | null
+  >(null);
   const [debugPanelOpen, setDebugPanelOpen] = useState(false);
   const [messages, setMessages] = useState<TimelineMessage[]>([
     {
@@ -576,6 +590,30 @@ export const App = () => {
     setMessages((items) =>
       items.map((item) => (item.id === id ? { ...item, content } : item)),
     );
+  };
+
+  const resetConversationState = () => {
+    const nextSessionId = crypto.randomUUID();
+    setSessionId(nextSessionId);
+    setMetrics(createInitialMetrics(nextSessionId));
+    setMessages([
+      {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: appCopy.initialAssistantMessage,
+      },
+    ]);
+    setVisionSummary(null);
+    visionSummaryRef.current = null;
+    setVisionContextSyncState("idle");
+    setVisionContextSyncedAt(null);
+    setVisualContextFreshness("missing");
+    setReplyContextTimestamp(null);
+    setVisionUpdatedDuringReply(false);
+    setTypedQuestion("");
+    setLastAssistantReply("");
+    setLastHeardText("");
+    setVoiceStatusHint(appCopy.voiceHintIdle);
   };
 
   const clearSpeechFallbackTimer = () => {
@@ -891,6 +929,72 @@ export const App = () => {
       appendSystemMessage(appCopy.backendOfflineMessage);
       return false;
     }
+  };
+
+  const loadSessionHistory = async () => {
+    setHistoryOpen(true);
+    setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      const response = await fetch(`${apiBase}/session/history`, {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(`History API failed with ${response.status}`);
+      }
+      const data = (await response.json()) as SessionHistoryListItem[];
+      setSessionHistory(data);
+    } catch {
+      setHistoryError(appCopy.historyLoadError);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const toggleSessionHistory = () => {
+    if (historyOpen) {
+      closeHistoryDetail();
+      setHistoryOpen(false);
+      return;
+    }
+
+    void loadSessionHistory();
+  };
+
+  const openHistoryDetail = async (historySessionId: string) => {
+    setHistoryLoading(true);
+    setHistoryError("");
+    setSelectedHistoryFrameUrl(null);
+    try {
+      const response = await fetch(
+        `${apiBase}/session/history/${historySessionId}`,
+        { cache: "no-store" },
+      );
+      if (!response.ok) {
+        throw new Error(`History detail API failed with ${response.status}`);
+      }
+      const detail = (await response.json()) as SessionHistoryDetail;
+      setSelectedHistory(detail);
+
+      const frameResponse = await fetch(
+        `${apiBase}/session/history/${historySessionId}/final-frame-url`,
+        { cache: "no-store" },
+      );
+      if (frameResponse.ok) {
+        const frameData =
+          (await frameResponse.json()) as SessionFinalFrameUrlResponse;
+        setSelectedHistoryFrameUrl(frameData.url);
+      }
+    } catch {
+      setHistoryError(appCopy.historyLoadError);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const closeHistoryDetail = () => {
+    setSelectedHistory(null);
+    setSelectedHistoryFrameUrl(null);
   };
 
   useEffect(() => {
@@ -1941,6 +2045,8 @@ export const App = () => {
   };
 
   const stopMedia = async () => {
+    const finalFrame = cameraEnabled ? await captureCurrentFrame() : null;
+
     mediaSessionActiveRef.current = false;
     stopSpeechRecognition(false);
     clearSpeechFallbackTimer();
@@ -1978,6 +2084,7 @@ export const App = () => {
     setLastActionTimelineAt(null);
     setPhase("idle");
 
+    let sessionEndFailed = false;
     try {
       await fetch(`${apiBase}/session/end`, {
         method: "POST",
@@ -1985,9 +2092,16 @@ export const App = () => {
         body: JSON.stringify({
           sessionId,
           metrics: { ...metrics, endedAt: new Date().toISOString() },
+          finalFrameImageBase64: finalFrame?.imageBase64,
         }),
       });
+      await loadSessionHistory();
     } catch {
+      sessionEndFailed = true;
+    }
+
+    resetConversationState();
+    if (sessionEndFailed) {
       appendSystemMessage(appCopy.sessionEndError);
     }
   };
@@ -2301,6 +2415,29 @@ export const App = () => {
             <strong>{phaseLabels[phase]}</strong>
             <p>{sceneModeProfile.label}</p>
           </CardContent>
+        </Card>
+
+        <Card className={`history-card ${historyOpen ? "open" : ""}`}>
+          <button
+            className="history-toggle"
+            onClick={toggleSessionHistory}
+            type="button"
+          >
+            <span className="history-toggle-icon">
+              <MessageCircle size={16} />
+            </span>
+            <span>
+              <strong>{appCopy.historyTitle}</strong>
+              <small>
+                {sessionHistory.length
+                  ? `${appCopy.historyCountPrefix}${sessionHistory.length}${appCopy.historyCountSuffix}`
+                  : appCopy.historyCollapsedHint}
+              </small>
+            </span>
+            <span className="history-toggle-action">
+              {historyOpen ? appCopy.historyCollapse : appCopy.historyExpand}
+            </span>
+          </button>
         </Card>
 
         <div className="timeline" ref={timelineRef} aria-live="polite">
@@ -2748,6 +2885,129 @@ export const App = () => {
           </CardContent>
         </Card>
       </aside>
+
+      {historyOpen ? (
+        <div className="history-overlay" role="dialog" aria-modal="true">
+          <Card className="history-modal">
+            <div className="history-modal-header">
+              <div>
+                <p className="eyebrow">{appCopy.historyEyebrow}</p>
+                <h2>
+                  {selectedHistory
+                    ? appCopy.historyDetailTitle
+                    : appCopy.historyTitle}
+                </h2>
+                <span>
+                  {selectedHistory
+                    ? selectedHistory.endedAt
+                      ? new Date(selectedHistory.endedAt).toLocaleString()
+                      : appCopy.historyNoEndTime
+                    : appCopy.historyDescription}
+                </span>
+              </div>
+              <Button
+                onClick={() => {
+                  closeHistoryDetail();
+                  setHistoryOpen(false);
+                }}
+                type="button"
+                variant="outline"
+              >
+                {appCopy.historyClose}
+              </Button>
+            </div>
+
+            <div className="history-modal-body">
+              {historyError ? (
+                <Alert className="status-alert">
+                  <AlertTriangle size={16} />
+                  <span>{historyError}</span>
+                </Alert>
+              ) : null}
+              {historyLoading ? (
+                <p className="history-empty">{appCopy.historyLoading}</p>
+              ) : null}
+              {!historyLoading && selectedHistory ? (
+                <div className="history-modal-detail">
+                  <div className="history-detail-media">
+                    <div className="history-frame">
+                      {selectedHistoryFrameUrl ? (
+                        <img
+                          alt={appCopy.historyFinalFrame}
+                          src={selectedHistoryFrameUrl}
+                        />
+                      ) : (
+                        <span>{appCopy.historyNoFinalFrame}</span>
+                      )}
+                    </div>
+                    <div className="history-meta">
+                      <span>
+                        {selectedHistory.messageCount}
+                        {appCopy.historyMessagesUnit}
+                      </span>
+                      <span>
+                        {selectedHistory.metrics?.visionRequests ?? 0}
+                        {appCopy.historyVisionRequestsUnit}
+                      </span>
+                    </div>
+                    <Button
+                      onClick={closeHistoryDetail}
+                      type="button"
+                      variant="outline"
+                    >
+                      {appCopy.historyBack}
+                    </Button>
+                  </div>
+                  <div className="history-messages">
+                    {selectedHistory.messages.map((message) => (
+                      <div
+                        className={`message ${message.role}`}
+                        key={message.id}
+                      >
+                        <span>
+                          {message.role === "assistant" ? "AI" : "User"}
+                        </span>
+                        <p>{message.content}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {!historyLoading && !selectedHistory ? (
+                <div className="history-modal-list">
+                  <div className="history-list">
+                    {sessionHistory.length ? (
+                      sessionHistory.map((item) => (
+                        <button
+                          className="history-item"
+                          key={item.sessionId}
+                          onClick={() => openHistoryDetail(item.sessionId)}
+                          type="button"
+                        >
+                          <strong>
+                            {item.endedAt
+                              ? new Date(item.endedAt).toLocaleString()
+                              : appCopy.historyNoEndTime}
+                          </strong>
+                          <span>
+                            {item.messageCount}
+                            {appCopy.historyMessagesUnit} ·{" "}
+                            {item.finalFrame
+                              ? appCopy.historyHasFinalFrame
+                              : appCopy.historyNoFinalFrame}
+                          </span>
+                        </button>
+                      ))
+                    ) : (
+                      <p className="history-empty">{appCopy.historyEmpty}</p>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </Card>
+        </div>
+      ) : null}
     </main>  );
 };
 

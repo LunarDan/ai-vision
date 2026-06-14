@@ -224,6 +224,36 @@ export interface AnalyzeVisionSequenceResponse {
 export interface EndSessionRequest {
   sessionId: string;
   metrics: SessionMetrics;
+  finalFrameImageBase64?: string;
+}
+
+export interface SessionHistoryFrame {
+  id: string;
+  objectKey?: string | null;
+  bucket?: string | null;
+  contentType?: string | null;
+  sha256?: string | null;
+  imageBytes: number;
+  createdAt: string;
+}
+
+export interface SessionHistoryListItem {
+  sessionId: string;
+  status: string;
+  startedAt: string;
+  endedAt?: string | null;
+  messageCount: number;
+  finalFrame?: SessionHistoryFrame | null;
+  metrics?: SessionMetrics | null;
+}
+
+export interface SessionHistoryDetail extends SessionHistoryListItem {
+  messages: ConversationHistoryItem[];
+}
+
+export interface SessionFinalFrameUrlResponse {
+  url: string | null;
+  expiresInSeconds: number;
 }
 
 export interface ConversationRequest {
