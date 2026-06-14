@@ -1,5 +1,9 @@
 # AI 视觉对话助手
 
+## Demo 视频
+
+评委可优先观看项目演示视频：[AI 视觉对话助手 Demo](https://www.bilibili.com/video/BV1M4JK6mEsV/?spm_id_from=333.1387.homepage.video_card.click&vd_source=b3758eeecda111fadfbeeb66a7289413)
+
 当前实现采用“本地关键帧采样 + 去重 + WebSocket 视觉记忆 + 流式文字回复”的方案：浏览器持续观察画面；后端按会话维护最新视觉状态和动作时间线，在用户提问时作为上下文提供给多模态模型。
 
 ## 核心功能
